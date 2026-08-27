@@ -5,7 +5,7 @@
       "command": "cmd.exe",
       "args": [
         "/c",
-        "cd /d %LOCALAPPDATA%\Roblox && .\mcp.bat"
+        "cd /d %LOCALAPPDATA%\\Roblox && .\\mcp.bat"
       ],
       "env": {}
     }
