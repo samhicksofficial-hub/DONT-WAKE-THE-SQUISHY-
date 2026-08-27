@@ -1,0 +1,18 @@
+# Built place/model files (generated from source, don't commit)
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# EXCEPT the real place file: it holds hand-imported models and the
+# hand-edited map, which are irreplaceable rather than generated.
+# Save it here via File -> Save to File As in Studio.
+!place/*.rbxl
+!place/*.rbxlx
+
+# Rojo build/session locks
+*.lock
+
+# Editor
+.vscode/
+.DS_Store

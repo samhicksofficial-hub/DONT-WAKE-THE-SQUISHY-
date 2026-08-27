@@ -1,0 +1,11 @@
+# Normalize text to LF in the repo; Git checks out native line endings.
+* text=auto eol=lf
+
+# Mesh source is text, textures and place files are not.
+*.obj text
+*.mtl text
+*.luau text
+*.png binary
+*.jpg binary
+*.rbxl binary
+*.rbxm binary
