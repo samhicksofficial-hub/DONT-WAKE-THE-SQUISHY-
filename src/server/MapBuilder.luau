@@ -48,10 +48,15 @@ local WALL_GAP_MARGIN = 6
 local PROP_SPAWN_CLEARANCE = 10
 -- Safe-zone decal thickness / lift above the walkway so nothing z-fights.
 local MARKING_LIFT = 0.04
+-- Roughly how wide one walkway checker tile should be, in studs; runs round
+-- to whatever divides their length evenly.
+local TILE_TARGET = 13
 
 -- The baseplate reads as darker ground outside the arena: the same grass hue,
 -- pushed well down toward black rather than a second hardcoded colour.
-local BASEPLATE_COLOR = (Palette.Grass :: Color3):Lerp(Color3.new(0, 0, 0), 0.62)
+-- Ground outside the arena: the same mint, a little deeper so the arena still
+-- reads as raised, but never dark — nothing in a cozy world goes to shadow.
+local BASEPLATE_COLOR = (Palette.Grass :: Color3):Lerp(Color3.fromRGB(120, 176, 140), 0.55)
 -- Awning stripes and prop timber reuse palette entries instead of new colours.
 local AWNING_STRIPES = { Palette.HouseRoof :: Color3, Palette.BaseTrim :: Color3 }
 
@@ -109,9 +114,9 @@ local function makeLabel(parent: Instance, text: string, position: UDim2, size: 
 	label.Font = Enum.Font.FredokaOne
 	label.Text = text
 	label.TextScaled = true
-	label.TextColor3 = Palette.BaseTrim
-	label.TextStrokeTransparency = 0.4
-	label.TextStrokeColor3 = Color3.new(0, 0, 0)
+	label.TextColor3 = (Palette :: any).Ink or Palette.BaseTrim
+	label.TextStrokeTransparency = 0.75
+	label.TextStrokeColor3 = Palette.BaseTrim
 	label.TextTransparency = 1 - opacity
 	label.Parent = parent
 	return label
@@ -333,36 +338,46 @@ function MapBuilder.Build(): Map
 		Palette.Dirt
 	)
 
-	-- Walkway ring: north/south strips span the corners, east/west fill the sides.
+	-- Walkway ring, laid as a soft checkerboard of vanilla and pale strawberry
+	-- tiles — the bathroom-tile look of the cozy reference. Tiles are one slab
+	-- each, sized to divide the run evenly so no sliver is left at the end.
 	local ringSpanX = fieldSize.X + walkway * 2
-	makePart(
-		root,
-		"WalkwayNorth",
-		Vector3.new(ringSpanX, 1, walkway),
-		floorCF * CFrame.new(0, 0, -(halfZ + walkway / 2)),
-		Palette.Walkway
-	)
-	makePart(
-		root,
-		"WalkwaySouth",
-		Vector3.new(ringSpanX, 1, walkway),
-		floorCF * CFrame.new(0, 0, halfZ + walkway / 2),
-		Palette.Walkway
-	)
-	makePart(
-		root,
-		"WalkwayEast",
-		Vector3.new(walkway, 1, fieldSize.Y),
-		floorCF * CFrame.new(halfX + walkway / 2, 0, 0),
-		Palette.Walkway
-	)
-	makePart(
-		root,
-		"WalkwayWest",
-		Vector3.new(walkway, 1, fieldSize.Y),
-		floorCF * CFrame.new(-(halfX + walkway / 2), 0, 0),
-		Palette.Walkway
-	)
+	local tiles = ensureFolder(root, "Walkway")
+	local altColor = (Palette :: any).WalkwayAlt or Palette.Walkway
+
+	-- Lays one straight run of tiles. `across` is the ring's depth (walkway),
+	-- `along` the length; `horizontal` says which world axis the run follows.
+	local function tileRun(tag: string, along: number, centre: CFrame, horizontal: boolean)
+		local columns = math.max(1, math.round(along / TILE_TARGET))
+		local rows = math.max(1, math.round(walkway / TILE_TARGET))
+		local tileAlong = along / columns
+		local tileAcross = walkway / rows
+		for column = 1, columns do
+			for row = 1, rows do
+				local offAlong = -along / 2 + (column - 0.5) * tileAlong
+				local offAcross = -walkway / 2 + (row - 0.5) * tileAcross
+				local size = if horizontal
+					then Vector3.new(tileAlong, 1, tileAcross)
+					else Vector3.new(tileAcross, 1, tileAlong)
+				local offset = if horizontal
+					then CFrame.new(offAlong, 0, offAcross)
+					else CFrame.new(offAcross, 0, offAlong)
+				local checker = (column + row) % 2 == 0
+				makePart(
+					tiles,
+					("%s_%d_%d"):format(tag, column, row),
+					size,
+					centre * offset,
+					checker and Palette.Walkway or altColor
+				)
+			end
+		end
+	end
+
+	tileRun("North", ringSpanX, floorCF * CFrame.new(0, 0, -(halfZ + walkway / 2)), true)
+	tileRun("South", ringSpanX, floorCF * CFrame.new(0, 0, halfZ + walkway / 2), true)
+	tileRun("East", fieldSize.Y, floorCF * CFrame.new(halfX + walkway / 2, 0, 0), false)
+	tileRun("West", fieldSize.Y, floorCF * CFrame.new(-(halfX + walkway / 2), 0, 0), false)
 
 	-- Plot spots: four in a row along the south edge (+Z) and four along the
 	-- north (-Z), evenly spaced across the field width. Each looks straight at
@@ -394,7 +409,13 @@ function MapBuilder.Build(): Map
 	-- Boundary wall: tall dark charcoal, hugging the OUTSIDE of the walkway,
 	-- with a walk-through gap in front of every plot. Collidable — it is the
 	-- edge of the arena.
-	local gapHalf = (plotFootprint.X + WALL_GAP_MARGIN) / 2
+	-- Wide enough to walk a base's full frontage through, but never wider than
+	-- the spacing between bases: an unclamped gap would run into its neighbour
+	-- and erase the whole wall run instead of punching holes in it.
+	local gapHalf = math.min(
+		(plotFootprint.X + WALL_GAP_MARGIN) / 2,
+		plotStep / 2 - WALL_THICKNESS
+	)
 	local wallY = wallHeight / 2
 
 	local function edgeWall(tag: string, zOffset: number)
@@ -480,7 +501,10 @@ function MapBuilder.Build(): Map
 		local spawnPart = existing :: SpawnLocation
 		spawnPart.Name = "WorldSpawn"
 		spawnPart.Size = Vector3.new(8, 1, 8)
-		spawnPart.CFrame = CFrame.new(-(outerX + 40), 0.5, 0)
+		-- INSIDE the wall ring: the boundary is sealed on the east and west, so
+		-- a spawn parked outside it would strand anyone SpawnService could not
+		-- move (their plot never built) behind a 14-stud wall.
+		spawnPart.CFrame = CFrame.new(-(halfX + walkway / 2), GROUND_Y + 0.5, 0)
 		spawnPart.Anchored = true
 		spawnPart.CanCollide = false
 		spawnPart.CanQuery = false

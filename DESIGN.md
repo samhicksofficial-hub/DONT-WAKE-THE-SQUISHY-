@@ -362,10 +362,21 @@ Players spawn **at their own base**, every time — first join and every respawn
   map, `Neutral`, and out of the way; it is only where a character materialises
   for the instant before SpawnService moves it.
 
-## Lighting
-Night, to match the reference: `ClockTime` 0, `Brightness` ~2, a deep blue-purple
-ambient, the pack's star Sky, and Atmosphere/Bloom kept. Bases read as lit
-interiors because of their ceiling lights.
+## Lighting — COZY (supersedes the earlier night rig)
+The art direction is the soft, milky, evenly-lit pastel world of ASMR obby
+games. `LightingService` owns it: midday `ClockTime`, modest `Brightness` with a
+very high pastel `Ambient` (the fill, not the sun, does the lighting, which is
+what flattens shadows into plush shading), a dense warm-pink `Atmosphere` so
+distance melts into candy floss, gentle `Bloom`, and a `ColorCorrectionEffect`
+("CozyGrade") lifting tint toward warm pink with contrast pulled down. No stars,
+no celestial bodies. Base ceiling lights stay dim on purpose — the ambient does
+the work, and brighter PointLights blow the pale palette out.
+
+All colour lives in `Config.Palette`, which is the whole art direction in one
+table: milky pastels and food colours (mint lawn, biscuit border, vanilla and
+pale-strawberry checkered walkway, cream walls, frosting-pink roofs, butter slot
+tiles, candy pads). Nothing is darker than a soft caramel; text uses
+`Palette.Ink`, a soft cocoa, never pure black.
 
 ## Still parked (needs the user)
 Icon-based UI props in the reference (Slap Protection shield, Lock Base padlock,

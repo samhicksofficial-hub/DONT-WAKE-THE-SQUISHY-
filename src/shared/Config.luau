@@ -158,25 +158,32 @@ Config.Base = {
 	CeilingLights = 4,
 }
 
+-- Cozy / ASMR-obby palette: milky pastels and food colours, nothing darker
+-- than a soft caramel. Everything the map builds reads its colour from here,
+-- so this table is the whole art direction in one place.
 Config.Palette = {
-	Grass = Color3.fromRGB(96, 200, 62),
-	Dirt = Color3.fromRGB(150, 88, 44),
-	Walkway = Color3.fromRGB(196, 199, 205),
-	BoundaryWall = Color3.fromRGB(46, 46, 52),
-	BaseWall = Color3.fromRGB(58, 58, 66),
-	BaseTrim = Color3.fromRGB(240, 243, 248),
-	BaseBack = Color3.fromRGB(196, 104, 42),   -- warm orange interior wall
-	BaseFloor = Color3.fromRGB(128, 130, 138),
-	BaseRoof = Color3.fromRGB(38, 38, 44),
-	SlotPlatform = Color3.fromRGB(150, 152, 160),
-	SlotBorder = Color3.fromRGB(96, 98, 106),
-	CollectPad = Color3.fromRGB(120, 240, 96),
-	DepositPad = Color3.fromRGB(60, 235, 100),
-	UnlockPad = Color3.fromRGB(255, 170, 0),
-	SignBoard = Color3.fromRGB(206, 108, 46),
-	HouseBody = Color3.fromRGB(247, 168, 60),
-	HouseRoof = Color3.fromRGB(226, 68, 64),
-	SafeZone = Color3.fromRGB(120, 220, 255),
+	Grass = Color3.fromRGB(142, 214, 148),        -- soft mint lawn
+	Dirt = Color3.fromRGB(226, 176, 124),         -- biscuit crumb border
+	Walkway = Color3.fromRGB(250, 234, 240),      -- vanilla icing
+	WalkwayAlt = Color3.fromRGB(236, 198, 220),   -- the other checker tile, pale strawberry
+	BoundaryWall = Color3.fromRGB(238, 162, 198), -- bubblegum wall
+	BaseWall = Color3.fromRGB(246, 222, 210),     -- cream
+	BaseTrim = Color3.fromRGB(255, 252, 250),     -- whipped white
+	BaseBack = Color3.fromRGB(246, 182, 162),     -- strawberry-milk back wall
+	BaseFloor = Color3.fromRGB(240, 222, 234),    -- soft tile
+	BaseRoof = Color3.fromRGB(230, 142, 178),     -- pink frosting roof
+	SlotPlatform = Color3.fromRGB(255, 226, 150), -- butter tile
+	SlotBorder = Color3.fromRGB(228, 190, 140),   -- toasted edge
+	CollectPad = Color3.fromRGB(132, 232, 166),   -- mint jelly
+	DepositPad = Color3.fromRGB(160, 226, 246),   -- blue raspberry
+	UnlockPad = Color3.fromRGB(255, 214, 150),    -- caramel
+	SignBoard = Color3.fromRGB(242, 166, 134),    -- peach board
+	HouseBody = Color3.fromRGB(255, 214, 130),    -- butter house
+	HouseRoof = Color3.fromRGB(238, 130, 156),    -- raspberry roof
+	SafeZone = Color3.fromRGB(206, 226, 255),     -- cool pastel blue
+	-- Text and outlines. Never pure black: a soft cocoa keeps the world plush
+	-- while still reading clearly on pale boards.
+	Ink = Color3.fromRGB(104, 74, 82),
 }
 
 -- ---------- progression (drives the Essential UI Pack panels) ----------

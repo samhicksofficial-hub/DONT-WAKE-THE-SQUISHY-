@@ -33,7 +33,7 @@ local DEFAULT_FLOOR_TOP = Config.Base.FloorTop :: number
 local TOUCH_DEBOUNCE = 0.4
 
 local SLOT_SPACING = 8
-local FRONT_ROW_STAGGER = 4
+local FRONT_ROW_STAGGER = 2
 local FRONT_ROW_Z = 1
 local ROW_DEPTH = 12
 local PLATFORM_SIZE = Vector3.new(6, 0.4, 6)
@@ -47,7 +47,9 @@ local PAD_RIM_THICKNESS = 0.16
 local PAD_FORWARD = 6 -- pad center sits this far in front of its platform center
 local DEPOSIT_SIZE = Vector3.new(10, 0.35, 6)
 local SPAWN_INSET = 4 -- fallback spawn marker distance in from the front edge
-local SPAWN_HEIGHT = 3 -- character pivot height above the floor
+-- The marker sits ON the floor, exactly like BaseBuilder's: SpawnService adds
+-- its own standing offset, so lifting it here too would drop the character.
+local SPAWN_HEIGHT = 0.5
 
 local COLOR_MONEY = Color3.fromRGB(85, 255, 85)
 local COLOR_REFUSE = Color3.fromRGB(255, 70, 70)
