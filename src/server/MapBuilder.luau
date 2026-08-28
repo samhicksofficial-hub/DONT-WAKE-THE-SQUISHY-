@@ -274,6 +274,27 @@ end
 
 -- ------------------------------------------------------------------- build --
 
+-- Reads plot spots the mapper placed by hand. Any Part named PlotSpot1..N under
+-- Workspace.Map.PlotSpots wins over the computed row layout, so bases can be
+-- dragged wherever they look right. Each part's LookVector should face the
+-- field. Returns nil when there are none (or the wrong number).
+local function readPlotSpotMarkers(root: Folder): { CFrame }?
+	local folder = root:FindFirstChild("PlotSpots")
+	if folder == nil then
+		return nil
+	end
+	local spots: { CFrame } = {}
+	for index = 1, Config.Plot.Count do
+		local marker = folder:FindFirstChild("PlotSpot" .. tostring(index))
+		if marker == nil or not marker:IsA("BasePart") then
+			warn(("[MapBuilder] PlotSpots is present but PlotSpot%d is missing; falling back to the computed layout"):format(index))
+			return nil
+		end
+		table.insert(spots, (marker :: BasePart).CFrame)
+	end
+	return spots
+end
+
 function MapBuilder.Build(): Map
 	local fieldSize = Config.Field.Size :: Vector2
 	local walkway = Config.Field.WalkwayWidth :: number
@@ -286,8 +307,26 @@ function MapBuilder.Build(): Map
 	local outerZ = halfZ + walkway
 
 	local root = ensureFolder(Workspace, "Map")
-	root:ClearAllChildren() -- idempotent rebuilds (fresh servers only ever call this once)
-	local props = ensureFolder(root, "Props")
+
+	-- HAND-EDITED MAPS WIN. Tick the HandEdited attribute on Workspace.Map (see
+	-- the "Editing the map by hand" section of README.md) and the server stops
+	-- generating geometry: it keeps whatever is saved in the place and only
+	-- computes the logical data the services need. Without this the generator
+	-- would wipe every manual change on the next server start.
+	local handEdited = root:GetAttribute("HandEdited") == true
+
+	-- Where generated geometry goes. On a hand-edited map that is a scratch
+	-- folder we throw away at the end: the whole function still runs (the
+	-- services need the spawn grid, waypoints and plot spots it computes), but
+	-- not one generated part reaches the world, so the saved map survives.
+	local buildRoot: Folder = root
+	if handEdited then
+		buildRoot = Instance.new("Folder")
+		buildRoot.Name = "GeneratedScratch"
+	else
+		root:ClearAllChildren() -- idempotent rebuilds
+	end
+	local props = ensureFolder(buildRoot, "Props")
 	local squishyFolder = ensureFolder(Workspace, "Squishies")
 	local enemyFolder = ensureFolder(Workspace, "Enemies")
 	local plotFolder = ensureFolder(Workspace, "Plots")
@@ -307,31 +346,31 @@ function MapBuilder.Build(): Map
 	local grassX = fieldSize.X - dirt * 2
 	local grassZ = fieldSize.Y - dirt * 2
 	local floorCF = CFrame.new(0, GROUND_Y - 0.5, 0)
-	makePart(root, "FieldFloor", Vector3.new(grassX, 1, grassZ), floorCF, Palette.Grass)
+	makePart(buildRoot, "FieldFloor", Vector3.new(grassX, 1, grassZ), floorCF, Palette.Grass)
 
 	makePart(
-		root,
+		buildRoot,
 		"DirtNorth",
 		Vector3.new(fieldSize.X, 1, dirt),
 		floorCF * CFrame.new(0, 0, -(halfZ - dirt / 2)),
 		Palette.Dirt
 	)
 	makePart(
-		root,
+		buildRoot,
 		"DirtSouth",
 		Vector3.new(fieldSize.X, 1, dirt),
 		floorCF * CFrame.new(0, 0, halfZ - dirt / 2),
 		Palette.Dirt
 	)
 	makePart(
-		root,
+		buildRoot,
 		"DirtWest",
 		Vector3.new(dirt, 1, grassZ),
 		floorCF * CFrame.new(-(halfX - dirt / 2), 0, 0),
 		Palette.Dirt
 	)
 	makePart(
-		root,
+		buildRoot,
 		"DirtEast",
 		Vector3.new(dirt, 1, grassZ),
 		floorCF * CFrame.new(halfX - dirt / 2, 0, 0),
@@ -342,7 +381,7 @@ function MapBuilder.Build(): Map
 	-- tiles — the bathroom-tile look of the cozy reference. Tiles are one slab
 	-- each, sized to divide the run evenly so no sliver is left at the end.
 	local ringSpanX = fieldSize.X + walkway * 2
-	local tiles = ensureFolder(root, "Walkway")
+	local tiles = ensureFolder(buildRoot, "Walkway")
 	local altColor = (Palette :: any).WalkwayAlt or Palette.Walkway
 
 	-- Lays one straight run of tiles. `across` is the ring's depth (walkway),
@@ -394,6 +433,7 @@ function MapBuilder.Build(): Map
 	end
 
 	local plotSpots: { CFrame } = {}
+	-- (reassigned below if the map carries hand-placed PlotSpot markers)
 	local plotEdges = {
 		{ z = plotDist, look = Vector3.new(0, 0, -1) },
 		{ z = -plotDist, look = Vector3.new(0, 0, 1) },
@@ -427,7 +467,7 @@ function MapBuilder.Build(): Map
 			end
 			piece += 1
 			makePart(
-				root,
+				buildRoot,
 				("Wall%s%d"):format(tag, piece),
 				Vector3.new(stop - cursor, wallHeight, WALL_THICKNESS),
 				CFrame.new((cursor + stop) / 2, wallY, zOffset),
@@ -446,14 +486,14 @@ function MapBuilder.Build(): Map
 
 	local sideWallLength = (outerZ + WALL_THICKNESS) * 2
 	makePart(
-		root,
+		buildRoot,
 		"WallEast",
 		Vector3.new(WALL_THICKNESS, wallHeight, sideWallLength),
 		CFrame.new(outerX + WALL_THICKNESS / 2, wallY, 0),
 		Palette.BoundaryWall
 	)
 	makePart(
-		root,
+		buildRoot,
 		"WallWest",
 		Vector3.new(WALL_THICKNESS, wallHeight, sideWallLength),
 		CFrame.new(-(outerX + WALL_THICKNESS / 2), wallY, 0),
@@ -463,7 +503,7 @@ function MapBuilder.Build(): Map
 	-- Safe-zone markings: a translucent strip across the walkway in front of
 	-- every plot, with "SAFE ZONE" laid flat on it. Oriented from the plot spot
 	-- so each one reads the right way up for the base it belongs to.
-	local markings = ensureFolder(root, "SafeZones")
+	local markings = ensureFolder(buildRoot, "SafeZones")
 	for index, spot in plotSpots do
 		pcall(function()
 			local edgeSign = spot.LookVector.Z < 0 and 1 or -1
@@ -495,7 +535,7 @@ function MapBuilder.Build(): Map
 		local existing = Workspace:FindFirstChildOfClass("SpawnLocation")
 		if not existing then
 			local created = Instance.new("SpawnLocation")
-			created.Parent = root
+			created.Parent = buildRoot
 			existing = created
 		end
 		local spawnPart = existing :: SpawnLocation
@@ -606,6 +646,20 @@ function MapBuilder.Build(): Map
 	-- full rect (squishies spawn on and can be carried off the mulch).
 	local function isInField(pos: Vector3): boolean
 		return math.abs(pos.X - fieldCenter.X) <= halfX and math.abs(pos.Z - fieldCenter.Z) <= halfZ
+	end
+
+	-- A hand-placed PlotSpots folder overrides the computed base positions, so
+	-- bases can be dragged anywhere. Checked on generated maps too — a mapper
+	-- can add the markers without switching the whole map to hand-edited.
+	local markerSpots = readPlotSpotMarkers(root)
+	if markerSpots ~= nil then
+		plotSpots = markerSpots
+	end
+
+	-- Throw the generated geometry away on a hand-edited map: it only existed
+	-- so the computation above could run against real numbers.
+	if handEdited then
+		buildRoot:Destroy()
 	end
 
 	return {
