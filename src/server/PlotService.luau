@@ -147,12 +147,22 @@ local function isOwnerTouch(plot: PlotRecord, hitPart: BasePart): boolean
 	return humanoid ~= nil and humanoid.Health > 0
 end
 
-local function updateCollectLabel(slot: SlotRecord)
+-- Shows what collecting would actually pay: rebirth multiplies income inside
+-- EconomyService.AddMoney, so the raw pending figure would understate it.
+local function updateCollectLabel(plot: PlotRecord, slot: SlotRecord)
 	local label = slot.collectLabel
 	if label == nil then
 		return
 	end
-	local shown = math.floor(slot.pending)
+	local payout = slot.pending
+	local economy = servicesRef ~= nil and servicesRef.EconomyService or nil
+	if economy ~= nil and typeof(economy.PreviewIncome) == "function" then
+		local ok, previewed = pcall(economy.PreviewIncome, plot.player, slot.pending)
+		if ok and typeof(previewed) == "number" then
+			payout = previewed
+		end
+	end
+	local shown = math.floor(payout)
 	if shown < 1 then
 		label.Text = "$0"
 		label.TextTransparency = 0.55
@@ -199,12 +209,17 @@ local function onCollectTouched(plot: PlotRecord, slot: SlotRecord, hitPart: Bas
 		return
 	end
 	slot.pending = 0
-	servicesRef.EconomyService.AddMoney(plot.player, amount)
+	-- Pop up what actually landed in the balance, not the raw figure: rebirth
+	-- multiplies income inside AddMoney.
+	local credited = servicesRef.EconomyService.AddMoney(plot.player, amount)
+	if typeof(credited) ~= "number" then
+		credited = amount
+	end
 	local pad = slot.collectPad
 	if pad ~= nil then
-		popupRemote:FireClient(plot.player, amount, pad.Position)
+		popupRemote:FireClient(plot.player, credited, pad.Position)
 	end
-	updateCollectLabel(slot)
+	updateCollectLabel(plot, slot)
 end
 
 local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
@@ -224,7 +239,7 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	local gui = newBillboard(pad, "PendingGui", 4.5, 1.8, 2.2, 90)
 	slot.collectPad = pad
 	slot.collectLabel = newLabel(gui, "$0", COLOR_MONEY, 1, 1)
-	updateCollectLabel(slot)
+	updateCollectLabel(plot, slot)
 	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
 		onCollectTouched(plot, slot, hitPart)
 	end))
@@ -336,7 +351,7 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	slot.occupied = true
 	slot.pending = 0
 	slot.income = (model:GetAttribute("Income") :: number?) or 0
-	updateCollectLabel(slot)
+	updateCollectLabel(plot, slot)
 end
 
 local function flashDepositPad(plot: PlotRecord)
@@ -574,7 +589,7 @@ local function accruePlot(plot: PlotRecord, elapsed: number)
 	for _, slot in plot.slots do
 		if slot.occupied then
 			slot.pending += slot.income * elapsed
-			updateCollectLabel(slot)
+			updateCollectLabel(plot, slot)
 		end
 	end
 end

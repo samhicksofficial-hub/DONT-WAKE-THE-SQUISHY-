@@ -62,19 +62,30 @@ function EconomyService.GetMoney(player: Player): number
 end
 
 -- Adds `amount` (fractional accrual pools welcome); result floors to an int.
+-- What `amount` of raw income is actually worth to this player once their
+-- rebirth multiplier is applied. Callers that show a figure before paying it
+-- (collect pads, popups) use this so the number never contradicts the balance.
+function EconomyService.PreviewIncome(player: Player, amount: number): number
+	if amount <= 0 or rebirthService == nil then
+		return amount
+	end
+	local ok, multiplier = pcall(function()
+		return rebirthService.GetMultiplier(player)
+	end)
+	if ok and typeof(multiplier) == "number" and multiplier > 0 then
+		return amount * multiplier
+	end
+	return amount
+end
+
 -- Every income source funnels through here, so the rebirth multiplier is
 -- applied at this one choke point (pads, wheel rewards, everything).
-function EconomyService.AddMoney(player: Player, amount: number)
-	local scaled = amount
-	if amount > 0 and rebirthService then
-		local ok, multiplier = pcall(function()
-			return rebirthService.GetMultiplier(player)
-		end)
-		if ok and typeof(multiplier) == "number" and multiplier > 0 then
-			scaled = amount * multiplier
-		end
-	end
-	setMoney(player, math.floor(EconomyService.GetMoney(player) + scaled))
+-- Returns the amount actually credited.
+function EconomyService.AddMoney(player: Player, amount: number): number
+	local scaled = EconomyService.PreviewIncome(player, amount)
+	local before = EconomyService.GetMoney(player)
+	setMoney(player, math.floor(before + scaled))
+	return EconomyService.GetMoney(player) - before
 end
 
 -- Sets a player's balance directly, ignoring multipliers (rebirth reset).
