@@ -24,6 +24,7 @@ Already written (spine — do NOT rewrite, only read):
 - `src/shared/Config.luau`        — all tuning data (rarities, squishy catalog, enemies, plot, field)
 - `src/shared/Util.luau`          — formatMoney, weightedRandom, xz distance helpers
 - `src/shared/SquishyFactory.luau`— builds a squishy Model from a catalog name
+- `src/shared/SquishyModels.luau` — 3D visuals: mesh templates + primitive fallbacks (clicker port)
 - `src/server/init.server.luau`   — creates Remotes, builds map, Start()s services in order
 - `src/client/init.client.luau`   — waits for shared, Start()s UI modules
 
@@ -139,11 +140,19 @@ EnemyService:
 
 ## Squishy catalog def shape (from `Config.Squishies` entries)
 ```lua
-{ name: string, rarity: string, color: Color3, scale: number }
+{ name: string, rarity: string, color: Color3, sparkle: boolean, shape: string, scale: number? }
 ```
+The roster is ported from the user's Squishy Clicker game (its `src/shared/Squishies.luau` is
+canon — 38 squishies (33 base + 5 Giant editions), rarities Common/Uncommon/Rare/Epic/Legendary/**Mythical**). `shape` picks
+a builder in `src/shared/SquishyModels.luau` (ported from the clicker's Models.luau): a mesh
+template cloned from `ReplicatedStorage.SquishyMeshes` when present (extracted from the
+clicker's place file into `Assets/SquishyMeshes.rbxm`; loadable via
+`game:GetObjects("rbxasset://SquishyMeshes.rbxm")` after copying it into Studio's content
+folder), else a part-built primitive fallback. `SquishyModels.build(spec) -> (Model, height)`
+returns an invisible anchored "Body" PrimaryPart box with all visual parts welded to it.
 Income/speedMult/rarity color come from `Config.Rarities[rarity]`. `SquishyFactory.create(name)`
-resolves all of that and returns a ready Model (anchored, State = "Sleeping", prompt enabled).
-Look at `src/shared/SquishyFactory.luau` for the exact model tree it produces.
+adds billboards/prompt/attributes on top and returns a ready Model (anchored, State =
+"Sleeping", prompt enabled). Look at `src/shared/SquishyFactory.luau` for the exact tree.
 
 ## Gameplay rules of record
 1. Pickup: ProximityPrompt (hold) on a squishy with State = "Sleeping". Server verifies the
@@ -176,8 +185,10 @@ Look at `src/shared/SquishyFactory.luau` for the exact model tree it produces.
 ## Style rules
 - Header every file with `--!strict`; be pragmatic — cast with `:: any` where Instance tree
   typing fights you rather than contorting the code.
-- No external asset ids (no Sounds/Decals/Meshes from the marketplace). Geometry from Parts,
-  text from Billboard/SurfaceGuis only. Neon material for glowy pads.
+- No NEW hardcoded asset ids in code (no Sounds/Decals/Meshes from the marketplace). The
+  user-owned mesh/texture ids already inside the `SquishyMeshes` templates are fine — they are
+  data, not code. Other geometry from Parts, text from Billboard/SurfaceGuis only. Neon
+  material for glowy pads.
 - No `wait()` — use `task.wait`. No deprecated APIs. Connections to characters/players must be
   cleaned up (store and Disconnect, or use Destroying/AncestryChanged appropriately).
 - Never error the whole service on one bad instance: pcall around per-entity work in loops.
@@ -185,3 +196,101 @@ Look at `src/shared/SquishyFactory.luau` for the exact model tree it produces.
 - UI text font: Enum.Font.FredokaOne everywhere (bubbly game feel). Money green:
   Color3.fromRGB(85, 255, 85) with black TextStroke.
 - Use `Util.formatMoney` for ALL money text (server SurfaceGuis and client HUD alike).
+
+---
+
+# UI Contract (Essential UI Pack — Swarve Studios)
+
+The game's entire interface is the **Essential UI Pack**, owned by the repo as
+`Assets/MainUi.rbxm` and synced by Rojo to `StarterGui.MainUi` (a ScreenGui,
+ResetOnSpawn = false, IgnoreGuiInset = true). Client code NEVER builds HUD
+geometry: it finds nodes in this tree and drives them. Panels ship hidden
+(`Visible = false`) except `Frames.Notifications`.
+
+To re-extract after editing the pack in Studio: `lune run tools/extract_ui.luau`.
+
+## The tree (paths client code relies on)
+```
+MainUi (ScreenGui)
+  HUD
+    Left.Buttons1.{Index,Rebirth,Shop}   -- TextButton; .Text.Text, .Notification (badge)
+    Left.Buttons2.{Invite,Wheel}         -- TextButton; Wheel.Text.Text shows "Spin (N)"
+    Labels.{Money,Offline}               -- TextLabel
+    Drop                                 -- TextButton; .Text.Text
+    Right.Random                         -- TextButton; .Text.Text, .Price.Text
+  Frames
+    Upgrades  .{PowerScrolling,DistanceScrolling}  -- ScrollingFrame + UIListLayout
+              .CarryUpgrade.{Buttons.{Money,Robux}, Stats.{Before,After}.Text, Image.Text}
+              .Title.{Shop (title label), Close}
+    Notifications.Instructions           -- TextLabel (contextual hint line)
+    Shop      .Scrolling.{StarterPack,ProPack,ItemsOnly,CashOnly}  -- Robux packs
+    Rebirth   .{Rebirth,Skip} buttons, .Frame.{Bar.{Progress,Text}, Stats.{Before,After}, RebirthBoost}
+    Index     .Scrolling (UIGridLayout), .Buttons.{Normal,Golden,Diamond}
+    Wheel     .SpinWheel.Pattern.{1..6}, .Buttons.{SpinButton,RobuxButton1,RobuxButton2}, .RedArrow, .Close
+  Effect.{Image1..Image4}                -- screen-edge vignette (red pulse while chased)
+```
+Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
+`Title.Shop` TextLabel (the pack's name for it — do not rename).
+
+## Client module map
+- `src/client/UiRefs.luau` — **foundation.** Resolves the tree once and exposes
+  `UiRefs.get() -> refs`, `UiRefs.openPanel(name)`, `UiRefs.closePanel(name)`,
+  `UiRefs.togglePanel(name)`, `UiRefs.setBadge(button, shown)`, `UiRefs.bindButton(button, fn)`
+  (click + hover pop), `UiRefs.notify(text, seconds)`. Only one panel is open at a
+  time. Written by hand; other client modules require it and NEVER search PlayerGui.
+- `Hud.luau` — Money (count-up tween), Offline (shows total $/s income), Drop button
+  (fires `Remotes.Drop`; visible only while carrying), Random button (hidden until
+  a Robux product id exists).
+- `AlertUi.luau` — Effect vignette pulses red while an enemy targets you; carry state
+  and contextual hints via `UiRefs.notify`.
+- `Panels.luau` — wires Left column buttons to panels, Close buttons, Invite button
+  (SocialService), and Wheel spin-count badge.
+- `IndexUi.luau` — fills `Index.Scrolling` from `Config.Squishies`, greying undiscovered.
+- `UpgradesUi.luau`, `RebirthUi.luau`, `WheelUi.luau` — drive their panels from the
+  attributes below and fire the remotes.
+- `Popups.luau` — unchanged (world-space "+$X").
+
+## Progression services (server)
+- `UpgradeService` — `Start(services, map)`, `GetLevel(player, track) -> number`,
+  `GetValue(player, track) -> number` (the tuning value at the player's level),
+  `TryBuy(player, track) -> boolean`. Tracks: `"Speed" | "Stealth" | "Carry"`.
+  Owns player attributes `Upgrade_Speed`, `Upgrade_Stealth`, `Upgrade_Carry` (levels,
+  1-based). Rebirth resets them to 1.
+- `RebirthService` — `Start`, `GetCount(player) -> number`, `TryRebirth(player) -> boolean`.
+  Owns attribute `Rebirths`; multiplies all income via `EconomyService`.
+- `WheelService` — `Start`, `GetSpins(player) -> number`, `TrySpin(player) -> number?`
+  (returns the winning `Config.Wheel.Rewards` index, or nil). Owns attributes
+  `Spins` and `NextSpinAt` (os.time seconds). Grants cash / a squishy delivered to
+  the player's plot / a timed speed boost.
+- `DiscoveryService` — `Start`, `MarkDiscovered(player, squishyName)`,
+  `IsDiscovered(player, squishyName) -> boolean`. Called by SquishyService on first
+  pickup. Replicates via the `Discovered` remote.
+
+## New player attributes (server writes, client reads)
+- `Upgrade_Speed`, `Upgrade_Stealth`, `Upgrade_Carry` — numbers, 1-based levels
+- `Rebirths` — number
+- `Spins` — number; `NextSpinAt` — os.time() when the next free spin lands
+- `SpeedBoost` — active multiplier from the wheel (nil/1 when none)
+
+## New remotes (`ReplicatedStorage.Remotes`)
+- `Drop: RemoteEvent` — client→server, drop the carried squishy where you stand
+- `BuyUpgrade: RemoteEvent` — client→server `(track: string)`
+- `DoRebirth: RemoteEvent` — client→server
+- `Spin: RemoteFunction` — client→server, returns the winning reward index or nil
+- `Discovered: RemoteEvent` — server→client `(names: {string})` full set on join,
+  and `(name: string)` on each new discovery (client accepts both shapes)
+
+## Cross-service effects of upgrades (who applies what)
+- **Speed / Carry**: `SquishyService` remains the ONLY writer of `Humanoid.WalkSpeed`.
+  Base = `UpgradeService.GetValue(player, "Speed")` (not `Config.Player.WalkSpeed`),
+  times `SpeedBoost` if set. While carrying, multiply by the drag-adjusted rarity
+  penalty: `1 - (1 - rarity.speedMult) * UpgradeService.GetValue(player, "Carry")`.
+- **Stealth**: `EnemyService` multiplies its notice radii by
+  `UpgradeService.GetValue(player, "Stealth")` per candidate player.
+- **Rebirth multiplier**: `EconomyService.AddMoney` applies it (single choke point),
+  so pads/wheel/all sources scale together.
+
+## Monetization (parked — needs the user's Creator Dashboard)
+`Shop` packs, the `Random` button, and the Wheel's Robux buttons need real
+developer-product ids. `Config.Products` holds them; while an id is 0 the client
+HIDES that button/pack. No code guesses ids.

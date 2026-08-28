@@ -3,15 +3,19 @@
 -- field asleep, notice nearby players, chase them, and slap them (fling +
 -- forced squishy drop). DESIGN.md rule 5 is the contract for this file.
 --
--- Enemy model tree (built here in code, no factory):
+-- Enemy model tree:
 --   Model (name = cfg.name, PrimaryPart = HumanoidRootPart)
 --     HumanoidRootPart (invisible box, CanCollide false, server-owned physics)
 --     Humanoid (WalkSpeed per state, JumpPower 0, name/health hidden)
---     Body (big Ball, massless, welded to root)
+--     Body (invisible bounding box from SquishyModels.build, welded to root)
 --       NameTag (BillboardGui, red enemy name, always on)
 --       Zzz (BillboardGui, shown while Sleeping)
 --       Alert (BillboardGui, red "!", shown while Chasing)
---     EyeL, EyeR (welded to Body; invisible asleep, red while chasing)
+--     ...visual mesh/primitive parts from SquishyModels.build (welded to Body)
+--
+-- The giant's look comes from the real squishy roster: cfg.shape picks the
+-- catalog shape, cfg.color tints it. Eyes/faces are baked into the meshes, so
+-- the only "awake" cue is the Alert billboard.
 --
 -- Attributes on the Model (EnemyService owns): EnemyName, State
 -- ("Sleeping" | "Chasing" | "Returning"), TargetUserId (0 unless chasing).
@@ -20,14 +24,16 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Util"))
+local SquishyModels = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("SquishyModels")) :: any
 
 local EnemyService = {}
 
+-- Set at Start; the Stealth upgrade shrinks notice radii per player.
+local upgradeService: any = nil
+
 local TICK = 0.15 -- seconds between state-machine steps
 local WAYPOINT_REACH = 6 -- studs (XZ) to count a waypoint as reached
-local BODY_BASE_SIZE = Vector3.new(3.4, 2.6, 3.4) -- matches SquishyFactory at scale 1
 local ROOT_BASE_SIZE = Vector3.new(2, 2, 1)
-local EYE_COLOR = Color3.fromRGB(255, 60, 60)
 local NAME_COLOR = Color3.fromRGB(255, 70, 70)
 
 -- One BillboardGui holding a single centered FredokaOne label.
@@ -69,11 +75,7 @@ end
 -- ground at spawnPos, parents it, and claims server network ownership.
 local function buildEnemy(cfg: any, spawnPos: Vector3, parent: Instance): any
 	local scale = cfg.scale :: number
-	local bodySize = BODY_BASE_SIZE * scale
 	local rootSize = ROOT_BASE_SIZE * scale
-	-- Humanoid keeps the root center at (HipHeight + rootSize.Y/2) above the
-	-- floor; solve so the body's base hovers just above the ground.
-	local hipHeight = math.max(bodySize.Y * 0.5 - rootSize.Y * 0.5 + 0.4, 0.5)
 
 	local model = Instance.new("Model")
 	model.Name = cfg.name
@@ -89,6 +91,21 @@ local function buildEnemy(cfg: any, spawnPos: Vector3, parent: Instance): any
 	root.Material = Enum.Material.SmoothPlastic
 	root.Parent = model
 	model.PrimaryPart = root
+
+	-- Real squishy visual (giant-sized): an invisible snug "Body" box with the
+	-- mesh/primitive parts welded to it, from the shared builder.
+	local visual, visualHeight = SquishyModels.build({
+		shape = cfg.shape,
+		color = cfg.color,
+		sparkle = false,
+		scale = scale,
+		forceTint = true,
+	})
+
+	-- Humanoid keeps the root center at (HipHeight + rootSize.Y/2) above the
+	-- floor; solve so the visual's base hovers just above the ground when the
+	-- visual's Body is centered on the root.
+	local hipHeight = math.max((visualHeight :: number) * 0.5 - rootSize.Y * 0.5 + 0.4, 0.5)
 
 	local humanoid = Instance.new("Humanoid")
 	humanoid.Name = "Humanoid"
@@ -108,58 +125,26 @@ local function buildEnemy(cfg: any, spawnPos: Vector3, parent: Instance): any
 	humanoid.BreakJointsOnDeath = false
 	humanoid.Parent = model
 
-	-- Block + sphere SpecialMesh: a Ball part ignores non-uniform Size (renders as
-	-- a sphere of the smallest axis); the mesh gives the wide squashed silhouette.
-	local body = Instance.new("Part")
-	body.Name = "Body"
-	body.Size = bodySize
-	body.Color = cfg.color
-	body.Material = Enum.Material.SmoothPlastic
+	-- Center the visual on the root, unanchor its Body, and weld it on; then
+	-- move everything out of the returned wrapper Model and drop the wrapper.
+	visual:PivotTo(root.CFrame)
+	local body = (visual :: Model).PrimaryPart :: BasePart
 	body.Anchored = false
 	body.Massless = true
-	body.CanCollide = false
-	body.CanTouch = false
 	body.CanQuery = false
-	body.CFrame = root.CFrame
-	local bodyMesh = Instance.new("SpecialMesh")
-	bodyMesh.MeshType = Enum.MeshType.Sphere
-	bodyMesh.Parent = body
-	body.Parent = model
-
 	local bodyWeld = Instance.new("WeldConstraint")
 	bodyWeld.Part0 = root
 	bodyWeld.Part1 = body
 	bodyWeld.Parent = body
-
-	-- Two big eyes on the front (-Z) face: hidden asleep, red while chasing.
-	local eyes = {} :: { BasePart }
-	for i, xOffset in { -0.28, 0.28 } do
-		local eye = Instance.new("Part")
-		eye.Name = i == 1 and "EyeL" or "EyeR"
-		eye.Size = Vector3.new(0.6, 0.9, 0.3) * scale
-		local eyeMesh = Instance.new("SpecialMesh")
-		eyeMesh.MeshType = Enum.MeshType.Sphere
-		eyeMesh.Parent = eye
-		eye.Color = EYE_COLOR
-		eye.Material = Enum.Material.Neon
-		eye.Transparency = 1
-		eye.Anchored = false
-		eye.Massless = true
-		eye.CanCollide = false
-		eye.CanTouch = false
-		eye.CanQuery = false
-		eye.CFrame = body.CFrame * CFrame.new(bodySize.X * xOffset, bodySize.Y * 0.12, -bodySize.Z * 0.42)
-		eye.Parent = model
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = body
-		weld.Part1 = eye
-		weld.Parent = eye
-		table.insert(eyes, eye)
+	for _, child in (visual :: Model):GetChildren() do
+		child.Parent = model
 	end
+	visual:Destroy()
 
-	makeBillboard(body, "NameTag", 16, 3.5, Vector3.new(0, bodySize.Y * 0.5 + 6.5, 0), cfg.name, NAME_COLOR, true)
-	local zzz = makeBillboard(body, "Zzz", 8, 5, Vector3.new(bodySize.X * 0.3, bodySize.Y * 0.5 + 2, 0), "Zzz", Color3.fromRGB(160, 200, 255), true)
-	local alert = makeBillboard(body, "Alert", 5, 6, Vector3.new(0, bodySize.Y * 0.5 + 2.5, 0), "!", Color3.fromRGB(255, 40, 40), false)
+	local halfHeight = (visualHeight :: number) * 0.5
+	makeBillboard(body, "NameTag", 16, 3.5, Vector3.new(0, halfHeight + 6.5, 0), cfg.name, NAME_COLOR, true)
+	local zzz = makeBillboard(body, "Zzz", 8, 5, Vector3.new(body.Size.X * 0.3, halfHeight + 2, 0), "Zzz", Color3.fromRGB(160, 200, 255), true)
+	local alert = makeBillboard(body, "Alert", 5, 6, Vector3.new(0, halfHeight + 2.5, 0), "!", Color3.fromRGB(255, 40, 40), false)
 
 	model:SetAttribute("EnemyName", cfg.name)
 	model:SetAttribute("State", "Sleeping")
@@ -177,7 +162,6 @@ local function buildEnemy(cfg: any, spawnPos: Vector3, parent: Instance): any
 		model = model,
 		root = root,
 		humanoid = humanoid,
-		eyes = eyes,
 		zzz = zzz,
 		alert = alert,
 		waypointIndex = 1,
@@ -200,7 +184,8 @@ local function nearestWaypointIndex(waypoints: { Vector3 }, pos: Vector3): numbe
 end
 
 -- Single writer for everything that varies by state: State/TargetUserId
--- attributes, billboards, eye visibility, WalkSpeed.
+-- attributes, billboards, WalkSpeed. The Alert billboard is the only visual
+-- "awake" cue (faces are baked into the squishy meshes).
 local function applyState(enemy: any, state: string)
 	local chasing = state == "Chasing"
 	local sleeping = state == "Sleeping"
@@ -213,9 +198,6 @@ local function applyState(enemy: any, state: string)
 	local alert = enemy.alert :: BillboardGui
 	zzz.Enabled = sleeping
 	alert.Enabled = chasing
-	for _, eye in enemy.eyes :: { BasePart } do
-		eye.Transparency = chasing and 0 or 1
-	end
 	local humanoid = enemy.humanoid :: Humanoid
 	humanoid.WalkSpeed = chasing and enemy.cfg.chaseSpeed or enemy.cfg.patrolSpeed
 end
@@ -232,6 +214,15 @@ local function findTarget(enemy: any, map: any, squishyService: any): Player?
 			local radius = enemy.cfg.noticeRadius
 			if squishyService.IsCarrying(player) then
 				radius = enemy.cfg.noticeRadiusCarrying
+			end
+			-- The player's Stealth upgrade shrinks how far this giant notices.
+			if upgradeService ~= nil then
+				local ok, stealth = pcall(function()
+					return upgradeService.GetValue(player, "Stealth")
+				end)
+				if ok and typeof(stealth) == "number" and stealth > 0 then
+					radius *= stealth
+				end
 			end
 			local dist = Util.xzDistance(enemyPos, root.Position)
 			if dist <= radius and dist < bestDist then
@@ -391,6 +382,7 @@ end
 function EnemyService.Start(services: any, map: any)
 	local config = services.Config
 	local squishyService = services.SquishyService
+	upgradeService = services.UpgradeService
 
 	for index, cfg in config.Enemies :: { any } do
 		local spawnPos = map.enemySpawns[index] or map.enemySpawns[1] or map.fieldCenter

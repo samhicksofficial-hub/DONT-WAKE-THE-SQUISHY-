@@ -20,6 +20,10 @@ local CARRY_GAP = 2 -- studs of air between the head top and the carried body ba
 
 local SquishyService = {}
 
+-- Set at Start: progression services that shape carrying and discovery.
+local upgradeService: any = nil
+local discoveryService: any = nil
+
 type CarryEntry = { model: Model, def: any }
 type PlayerConns = { characterAdded: RBXScriptConnection?, died: RBXScriptConnection? }
 
@@ -48,17 +52,71 @@ local function releaseFieldSpawn(model: Model)
 	freshCount -= 1
 end
 
+-- The player's base walkspeed: their Speed upgrade (falling back to the config
+-- default before UpgradeService exists), times any active wheel speed boost.
+local function baseSpeed(player: Player): number
+	local speed = Config.Player.WalkSpeed
+	if upgradeService ~= nil then
+		local ok, value = pcall(function()
+			return upgradeService.GetValue(player, "Speed")
+		end)
+		if ok and typeof(value) == "number" and value > 0 then
+			speed = value
+		end
+	end
+	local boost = tonumber(player:GetAttribute("SpeedBoost"))
+	if boost ~= nil and boost > 0 then
+		speed *= boost
+	end
+	return speed
+end
+
+-- The carry penalty for a rarity, softened by the Carry upgrade: a drag value
+-- of 1 is the full rarity penalty, 0.3 is 30% of it.
+local function carryPenalty(player: Player, speedMult: number): number
+	local drag = 1
+	if upgradeService ~= nil then
+		local ok, value = pcall(function()
+			return upgradeService.GetValue(player, "Carry")
+		end)
+		if ok and typeof(value) == "number" and value >= 0 then
+			drag = value
+		end
+	end
+	return 1 - (1 - speedMult) * drag
+end
+
+-- Applies the right WalkSpeed for the player's current state. This service is
+-- the only writer of WalkSpeed, so everything routes through here.
+local function applySpeed(player: Player)
+	local character = player.Character
+	if character == nil then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid == nil then
+		return
+	end
+	local speed = baseSpeed(player)
+	local held = carrying[player]
+	if held ~= nil then
+		-- Recompute rather than reading the attribute back: buying the Carry
+		-- upgrade mid-carry must lighten the squishy already on your head.
+		local rarityMult = tonumber(held.model:GetAttribute("SpeedMult")) or 1
+		local mult = carryPenalty(player, rarityMult)
+		player:SetAttribute("CarrySpeedMult", mult)
+		speed *= mult
+	end
+	humanoid.WalkSpeed = speed
+end
+
+SquishyService.ApplySpeed = applySpeed
+
 -- Clears carry attributes and takes WalkSpeed back to base.
 local function restorePlayer(player: Player)
 	player:SetAttribute("Carrying", nil)
 	player:SetAttribute("CarrySpeedMult", nil)
-	local character = player.Character
-	if character ~= nil then
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if humanoid ~= nil then
-			humanoid.WalkSpeed = Config.Player.WalkSpeed
-		end
-	end
+	applySpeed(player)
 end
 
 function SquishyService.IsCarrying(player: Player): boolean
@@ -140,11 +198,17 @@ local function onPickup(player: Player, model: Model)
 
 	model.Parent = character
 
-	local speedMult = tonumber(model:GetAttribute("SpeedMult")) or 1
 	carrying[player] = { model = model, def = def }
 	player:SetAttribute("Carrying", def.name)
-	player:SetAttribute("CarrySpeedMult", speedMult)
-	humanoid.WalkSpeed = Config.Player.WalkSpeed * speedMult
+	-- applySpeed writes CarrySpeedMult (softened by the Carry upgrade), so the
+	-- HUD shows the slowdown the player actually feels.
+	applySpeed(player)
+
+	if discoveryService ~= nil then
+		pcall(function()
+			discoveryService.MarkDiscovered(player, def.name)
+		end)
+	end
 end
 
 -- One spawn attempt: respects the fresh cap and spawn point occupancy.
@@ -294,7 +358,7 @@ local function onCharacterAdded(player: Player, character: Model)
 	if humanoid == nil or not humanoid:IsA("Humanoid") then
 		return
 	end
-	humanoid.WalkSpeed = Config.Player.WalkSpeed
+	applySpeed(player)
 
 	local conns = playerConns[player]
 	if conns == nil then
@@ -309,8 +373,20 @@ local function onCharacterAdded(player: Player, character: Model)
 	end)
 end
 
-function SquishyService.Start(_services: any, map: any)
+function SquishyService.Start(services: any, map: any)
 	mapRef = map
+	upgradeService = services.UpgradeService
+	discoveryService = services.DiscoveryService
+
+	-- The client's Drop button, and any speed change from upgrades or a wheel
+	-- boost, both land back here — this service owns WalkSpeed.
+	local remotes = ReplicatedStorage:WaitForChild("Remotes")
+	local dropRemote = remotes:WaitForChild("Drop")
+	if dropRemote:IsA("RemoteEvent") then
+		dropRemote.OnServerEvent:Connect(function(player)
+			SquishyService.ForceDrop(player)
+		end)
+	end
 
 	local function watchPlayer(player: Player)
 		local conns = {} :: PlayerConns
@@ -318,6 +394,13 @@ function SquishyService.Start(_services: any, map: any)
 		conns.characterAdded = player.CharacterAdded:Connect(function(character)
 			onCharacterAdded(player, character)
 		end)
+		-- Upgrades and wheel boosts change speed while the player is standing
+		-- there; re-apply whenever one moves.
+		for _, attribute in { "Upgrade_Speed", "Upgrade_Carry", "SpeedBoost" } do
+			player:GetAttributeChangedSignal(attribute):Connect(function()
+				pcall(applySpeed, player)
+			end)
+		end
 		local existing = player.Character
 		if existing ~= nil then
 			task.spawn(onCharacterAdded, player, existing)

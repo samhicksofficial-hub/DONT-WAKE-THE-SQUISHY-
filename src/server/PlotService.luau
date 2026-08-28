@@ -614,4 +614,27 @@ function PlotService.GetPlotOrigin(player: Player): CFrame?
 	return nil
 end
 
+-- Drops a squishy straight onto a free slot without the player carrying it
+-- home — how the wheel delivers a squishy prize. Returns false when the player
+-- has no plot or no free unlocked slot (the caller then pays out instead).
+function PlotService.TryPlaceSquishy(player: Player, def: any): boolean
+	if def == nil then
+		return false
+	end
+	local plot = plots[player]
+	if plot == nil then
+		return false
+	end
+	local slot = findFreeSlot(plot)
+	if slot == nil then
+		return false
+	end
+	local ok, err = pcall(placeSquishy, plot, slot, def)
+	if not ok then
+		warn(("[PlotService] wheel placement failed for %s: %s"):format(player.Name, tostring(err)))
+		return false
+	end
+	return true
+end
+
 return PlotService

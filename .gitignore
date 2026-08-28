@@ -10,6 +10,12 @@
 !place/*.rbxl
 !place/*.rbxlx
 
+# EXCEPT the Assets/ models: these are SOURCE, not build output. Rojo syncs
+# them into the place (see default.project.json), so the game cannot be built
+# without them: the Essential UI Pack UI and the imported squishy meshes.
+# Regenerate with the scripts in tools/.
+!Assets/*.rbxm
+
 # Rojo build/session locks
 *.lock
 

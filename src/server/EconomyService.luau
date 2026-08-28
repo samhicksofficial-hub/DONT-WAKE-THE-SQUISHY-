@@ -7,6 +7,9 @@ local Players = game:GetService("Players")
 
 local EconomyService = {}
 
+-- Set at Start; AddMoney asks it for the rebirth income multiplier.
+local rebirthService: any = nil
+
 -- The player's Money IntValue, if their leaderstats exist yet.
 local function findMoneyValue(player: Player): IntValue?
 	local leaderstats = player:FindFirstChild("leaderstats")
@@ -59,8 +62,24 @@ function EconomyService.GetMoney(player: Player): number
 end
 
 -- Adds `amount` (fractional accrual pools welcome); result floors to an int.
+-- Every income source funnels through here, so the rebirth multiplier is
+-- applied at this one choke point (pads, wheel rewards, everything).
 function EconomyService.AddMoney(player: Player, amount: number)
-	setMoney(player, math.floor(EconomyService.GetMoney(player) + amount))
+	local scaled = amount
+	if amount > 0 and rebirthService then
+		local ok, multiplier = pcall(function()
+			return rebirthService.GetMultiplier(player)
+		end)
+		if ok and typeof(multiplier) == "number" and multiplier > 0 then
+			scaled = amount * multiplier
+		end
+	end
+	setMoney(player, math.floor(EconomyService.GetMoney(player) + scaled))
+end
+
+-- Sets a player's balance directly, ignoring multipliers (rebirth reset).
+function EconomyService.SetMoney(player: Player, amount: number)
+	setMoney(player, math.max(0, math.floor(amount)))
 end
 
 -- Deducts `amount` if affordable and returns true, else false and no change.
@@ -74,7 +93,8 @@ function EconomyService.TrySpend(player: Player, amount: number): boolean
 	return true
 end
 
-function EconomyService.Start(_services: any, _map: any)
+function EconomyService.Start(services: any, _map: any)
+	rebirthService = services.RebirthService
 	Players.PlayerAdded:Connect(safeSetup)
 	for _, player in Players:GetPlayers() do
 		safeSetup(player)

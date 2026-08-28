@@ -2,26 +2,34 @@
 -- Builds squishy Models from the Config catalog. Used by SquishyService for
 -- field spawns and by PlotService for placed display copies.
 --
--- Model tree produced by `create`:
+-- The 3D visual comes from SquishyModels (mesh templates in
+-- ReplicatedStorage.SquishyMeshes with part-built fallbacks, ported from the
+-- user's Squishy Clicker game). This module adds the gameplay dressing:
+--
 --   Model (name = def.name, PrimaryPart = Body)
---     Body (Part, Ball, anchored, CanCollide false) -- the blob
+--     Body (invisible anchored box sized to the visual; from SquishyModels)
 --       ProximityPrompt "PickupPrompt" (hold to pick up; enabled)
 --       BillboardGui "Info" (name / rarity / $s labels, always on)
 --       BillboardGui "Zzz" ("Zzz" label; server toggles Enabled by State)
---     EyeL, EyeR (Parts, welded to Body, massless)
+--     ...visual parts welded to Body (massless, no collide/touch/query)
 --
 -- Attributes on the Model: SquishyName, Rarity, Income, SpeedMult, Scale,
--- State ("Sleeping" on creation).
+-- BodyHeight, State ("Sleeping" on creation).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Util"))
+local SquishyModels = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("SquishyModels"))
 
 local SquishyFactory = {}
 
--- Base body dimensions at scale 1 (squashed ball, like a plushie).
-local BASE_SIZE = Vector3.new(3.4, 2.6, 3.4)
+-- Measured body heights by squishy name, filled in as models get built so
+-- bodyHeight() answers accurately after the first create() of each kind.
+local measuredHeights: { [string]: number } = {}
+
+-- Estimated height at scale 1 for squishies never built yet (dumpling-ish).
+local FALLBACK_HEIGHT = 2.6
 
 local function makeLabel(parent: Instance, text: string, color: Color3, size: number, order: number): TextLabel
 	local label = Instance.new("TextLabel")
@@ -48,54 +56,23 @@ function SquishyFactory.create(squishyName: string): Model
 	local rarity = Config.RarityByName[def.rarity]
 	assert(rarity ~= nil, ("Unknown rarity '%s'"):format(def.rarity))
 
-	local model = Instance.new("Model")
+	local model, height = SquishyModels.build({
+		shape = def.shape,
+		color = def.color,
+		sparkle = def.sparkle,
+		scale = def.scale,
+	})
 	model.Name = def.name
+	measuredHeights[def.name] = height
 
-	local size = BASE_SIZE * def.scale
-	-- Block + sphere SpecialMesh: a Ball part ignores non-uniform Size (renders as
-	-- a sphere of the smallest axis); the mesh gives a true squashed ellipsoid.
-	local body = Instance.new("Part")
-	body.Name = "Body"
-	body.Size = size
-	body.Color = def.color
-	body.Material = Enum.Material.SmoothPlastic
-	body.Anchored = true
-	body.CanCollide = false
-	body.CanTouch = false
-	local bodyMesh = Instance.new("SpecialMesh")
-	bodyMesh.MeshType = Enum.MeshType.Sphere
-	bodyMesh.Parent = body
-	body.Parent = model
-	model.PrimaryPart = body
-
-	-- Eyes: two black flattened balls on the front (-Z) face.
-	for i, xOffset in { -0.28, 0.28 } do
-		local eye = Instance.new("Part")
-		eye.Name = i == 1 and "EyeL" or "EyeR"
-		eye.Size = Vector3.new(0.5, 0.7, 0.28) * def.scale
-		local eyeMesh = Instance.new("SpecialMesh")
-		eyeMesh.MeshType = Enum.MeshType.Sphere
-		eyeMesh.Parent = eye
-		eye.Color = Color3.fromRGB(25, 25, 30)
-		eye.Material = Enum.Material.SmoothPlastic
-		eye.Anchored = false
-		eye.Massless = true
-		eye.CanCollide = false
-		eye.CanTouch = false
-		eye.CanQuery = false
-		eye.CFrame = body.CFrame * CFrame.new(size.X * xOffset, size.Y * 0.12, -size.Z * 0.42)
-		eye.Parent = model
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = body
-		weld.Part1 = eye
-		weld.Parent = eye
-	end
+	local body = model.PrimaryPart :: BasePart
+	local halfY = height * 0.5
 
 	-- Info billboard: name, rarity, income.
 	local info = Instance.new("BillboardGui")
 	info.Name = "Info"
 	info.Size = UDim2.fromScale(7, 3)
-	info.StudsOffsetWorldSpace = Vector3.new(0, size.Y * 0.5 + 2.6, 0)
+	info.StudsOffsetWorldSpace = Vector3.new(0, halfY + 2.6, 0)
 	info.AlwaysOnTop = false
 	info.MaxDistance = 90
 	info.Parent = body
@@ -111,7 +88,7 @@ function SquishyFactory.create(squishyName: string): Model
 	local zzz = Instance.new("BillboardGui")
 	zzz.Name = "Zzz"
 	zzz.Size = UDim2.fromScale(3, 2)
-	zzz.StudsOffsetWorldSpace = Vector3.new(size.X * 0.35, size.Y * 0.5 + 0.8, 0)
+	zzz.StudsOffsetWorldSpace = Vector3.new(halfY * 0.5, halfY + 0.8, 0)
 	zzz.AlwaysOnTop = false
 	zzz.MaxDistance = 70
 	zzz.Enabled = true
@@ -133,17 +110,23 @@ function SquishyFactory.create(squishyName: string): Model
 	model:SetAttribute("Rarity", def.rarity)
 	model:SetAttribute("Income", rarity.income)
 	model:SetAttribute("SpeedMult", rarity.speedMult)
-	model:SetAttribute("Scale", def.scale)
+	model:SetAttribute("Scale", def.scale or 1)
+	model:SetAttribute("BodyHeight", height)
 	model:SetAttribute("State", "Sleeping")
 
 	return model
 end
 
 -- Height of the body for a catalog def (for pivoting onto the ground).
+-- Accurate once a squishy of that kind has been built; estimated before then.
 function SquishyFactory.bodyHeight(defOrName: any): number
 	local def = typeof(defOrName) == "string" and Config.SquishyByName[defOrName] or defOrName
 	assert(def ~= nil, "Unknown squishy def")
-	return BASE_SIZE.Y * def.scale
+	local measured = measuredHeights[def.name]
+	if measured then
+		return measured
+	end
+	return FALLBACK_HEIGHT * (def.scale or 1)
 end
 
 return SquishyFactory

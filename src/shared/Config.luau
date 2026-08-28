@@ -1,7 +1,10 @@
 --!strict
 -- Shared tuning values for Don't Wake the Squishy.
 -- Anything both the server and the client need to agree on lives here.
--- See DESIGN.md for how these tables are consumed.
+-- The squishy roster and rarities are ported from the user's Squishy Clicker
+-- game (Squishy-Clicker-Roblox/src/shared/Squishies.luau) so both games share
+-- one canon. `shape` keys map to SquishyModels builders / mesh templates in
+-- ReplicatedStorage.SquishyMeshes. See DESIGN.md for how these are consumed.
 
 local Config = {}
 
@@ -11,16 +14,16 @@ Config.Player = {
 	WalkSpeed = 16,
 }
 
--- Ordered from most to least common. `weight` drives the field spawn roll.
--- `income` is $ per second for a placed squishy of this rarity.
+-- Ordered from most to least common. `weight` drives the field spawn roll
+-- (clicker odds: out of 1000). `income` is $ per second for a placed squishy.
 -- `speedMult` multiplies WalkSpeed while carrying.
 Config.Rarities = {
-	{ name = "Common",    color = Color3.fromRGB(200, 200, 200), income = 1,     speedMult = 0.92, weight = 55 },
-	{ name = "Uncommon",  color = Color3.fromRGB(88, 214, 88),   income = 8,     speedMult = 0.80, weight = 25 },
-	{ name = "Rare",      color = Color3.fromRGB(64, 140, 255),  income = 40,    speedMult = 0.66, weight = 12 },
-	{ name = "Epic",      color = Color3.fromRGB(170, 85, 255),  income = 250,   speedMult = 0.50, weight = 5.5 },
-	{ name = "Legendary", color = Color3.fromRGB(255, 170, 0),   income = 1500,  speedMult = 0.38, weight = 2 },
-	{ name = "Mythic",    color = Color3.fromRGB(255, 64, 129),  income = 10000, speedMult = 0.28, weight = 0.5 },
+	{ name = "Common",    color = Color3.fromRGB(148, 155, 164), income = 1,     speedMult = 0.92, weight = 550 },
+	{ name = "Uncommon",  color = Color3.fromRGB(96, 190, 120),  income = 8,     speedMult = 0.80, weight = 250 },
+	{ name = "Rare",      color = Color3.fromRGB(88, 148, 235),  income = 40,    speedMult = 0.66, weight = 120 },
+	{ name = "Epic",      color = Color3.fromRGB(168, 110, 235), income = 250,   speedMult = 0.50, weight = 55 },
+	{ name = "Legendary", color = Color3.fromRGB(240, 165, 60),  income = 1500,  speedMult = 0.38, weight = 20 },
+	{ name = "Mythical",  color = Color3.fromRGB(240, 95, 150),  income = 10000, speedMult = 0.28, weight = 5 },
 }
 
 -- Fast lookup by rarity name (built below).
@@ -29,26 +32,64 @@ for _, rarity in Config.Rarities do
 	Config.RarityByName[rarity.name] = rarity
 end
 
--- The collectable roster. `scale` multiplies the base body size.
+-- Size multipliers for squishies whose name promises one (from the clicker).
+local MINI = 0.7
+local GIANT = 1.45
+
+-- The collectable roster: the full Squishy Clicker catalog.
+-- `shape` picks the model builder (mesh template with part fallback);
+-- `scale` multiplies the normalized display size (default 1).
 Config.Squishies = {
-	-- Common
-	{ name = "Blobby",      rarity = "Common",    color = Color3.fromRGB(150, 200, 255), scale = 1.0 },
-	{ name = "Doughy",      rarity = "Common",    color = Color3.fromRGB(245, 225, 180), scale = 1.0 },
-	{ name = "Pebble",      rarity = "Common",    color = Color3.fromRGB(170, 170, 180), scale = 0.9 },
-	-- Uncommon
-	{ name = "Sprout",      rarity = "Uncommon",  color = Color3.fromRGB(120, 220, 120), scale = 1.1 },
-	{ name = "Wiggles",     rarity = "Uncommon",  color = Color3.fromRGB(90, 220, 210),  scale = 1.1 },
-	-- Rare
-	{ name = "Jellybean",   rarity = "Rare",      color = Color3.fromRGB(255, 105, 200), scale = 1.25 },
-	{ name = "Frostbite",   rarity = "Rare",      color = Color3.fromRGB(160, 220, 255), scale = 1.25 },
-	-- Epic
-	{ name = "Glowbo",      rarity = "Epic",      color = Color3.fromRGB(190, 120, 255), scale = 1.45 },
-	{ name = "Thunderpuff", rarity = "Epic",      color = Color3.fromRGB(255, 230, 90),  scale = 1.45 },
+	-- Commons: the classic solid-color dumplings
+	{ name = "Red Dumpling",    rarity = "Common",    color = Color3.fromRGB(214, 69, 65),   sparkle = false, shape = "dumplingmesh" },
+	{ name = "Pink Dumpling",   rarity = "Common",    color = Color3.fromRGB(247, 168, 195), sparkle = false, shape = "dumplingmesh" },
+	{ name = "Blue Dumpling",   rarity = "Common",    color = Color3.fromRGB(94, 156, 222),  sparkle = false, shape = "dumplingmesh" },
+	{ name = "Green Dumpling",  rarity = "Common",    color = Color3.fromRGB(139, 197, 96),  sparkle = false, shape = "dumplingmesh" },
+	-- Commons: everyday squishies
+	{ name = "Stretch Banana",  rarity = "Common",    color = Color3.fromRGB(250, 216, 88),  sparkle = false, shape = "bananamesh" },
+	{ name = "Coconut Ball",    rarity = "Common",    color = Color3.fromRGB(196, 228, 200), sparkle = false, shape = "coconutmesh" },
+	{ name = "Mini Jelly Cube", rarity = "Common",    color = Color3.fromRGB(242, 150, 62),  sparkle = false, shape = "cubeorange", scale = MINI },
+	{ name = "Dough Cloud",     rarity = "Common",    color = Color3.fromRGB(250, 248, 244), sparkle = false, shape = "cloudmesh" },
+	{ name = "Butter Stick",    rarity = "Common",    color = Color3.fromRGB(247, 210, 96),  sparkle = false, shape = "buttermesh" },
+	{ name = "Strawberry",      rarity = "Common",    color = Color3.fromRGB(219, 58, 62),   sparkle = false, shape = "strawberrymesh" },
+
+	-- Uncommons
+	{ name = "White Dumpling",  rarity = "Uncommon",  color = Color3.fromRGB(243, 240, 235), sparkle = false, shape = "dumplingmesh" },
+	{ name = "Purple Dumpling", rarity = "Uncommon",  color = Color3.fromRGB(158, 122, 216), sparkle = false, shape = "dumplingmesh" },
+	{ name = "Teal Dumpling",   rarity = "Uncommon",  color = Color3.fromRGB(84, 196, 196),  sparkle = false, shape = "dumplingmesh" },
+	{ name = "Squeeze Cheese",  rarity = "Uncommon",  color = Color3.fromRGB(245, 196, 54),  sparkle = false, shape = "cheesemesh" },
+	{ name = "Swirl Cube",      rarity = "Uncommon",  color = Color3.fromRGB(235, 122, 168), sparkle = false, shape = "cubepink" },
+	{ name = "Blue Cube",       rarity = "Uncommon",  color = Color3.fromRGB(138, 200, 240), sparkle = false, shape = "cubeblue" },
+
+	-- Rares
+	{ name = "Sky Glitter",     rarity = "Rare",      color = Color3.fromRGB(70, 120, 200),  sparkle = true,  shape = "dumplingmesh" },
+	{ name = "Olive Glitter",   rarity = "Rare",      color = Color3.fromRGB(140, 150, 70),  sparkle = true,  shape = "dumplingmesh" },
+	{ name = "Glitter Cube",    rarity = "Rare",      color = Color3.fromRGB(112, 218, 122), sparkle = true,  shape = "cubegreen" },
+	{ name = "Two-Tone Glitter", rarity = "Rare",     color = Color3.fromRGB(186, 142, 235), sparkle = true,  shape = "cubepurple" },
+	{ name = "Boxed Cake",      rarity = "Rare",      color = Color3.fromRGB(246, 204, 158), sparkle = true,  shape = "tub" },
+	{ name = "Pug Squishy",     rarity = "Rare",      color = Color3.fromRGB(214, 178, 128), sparkle = false, shape = "pugmesh" },
+	{ name = "Ice Cube Squishy", rarity = "Rare",     color = Color3.fromRGB(176, 224, 246), sparkle = false, shape = "icecubemesh" },
+
+	-- Epics
+	{ name = "Confetti Pink",   rarity = "Epic",      color = Color3.fromRGB(240, 140, 180), sparkle = true,  shape = "dumplingmesh" },
+	{ name = "Rainbow Melt",    rarity = "Epic",      color = Color3.fromRGB(190, 220, 120), sparkle = true,  shape = "dumplingmesh" },
+	{ name = "Pink Brain",      rarity = "Epic",      color = Color3.fromRGB(240, 158, 170), sparkle = false, shape = "brainmesh" },
+	{ name = "Blobfish",        rarity = "Epic",      color = Color3.fromRGB(122, 170, 230), sparkle = false, shape = "blobfishmesh" },
+	{ name = "Sugar Baby",      rarity = "Epic",      color = Color3.fromRGB(230, 120, 198), sparkle = true,  shape = "babymesh" },
+	{ name = "Rainbow Butter",  rarity = "Epic",      color = Color3.fromRGB(196, 124, 220), sparkle = false, shape = "rainbuttermesh" },
+	{ name = "Sparkle Drop",    rarity = "Epic",      color = Color3.fromRGB(140, 226, 198), sparkle = true,  shape = "dropmesh" },
+	{ name = "Giant Banana",    rarity = "Epic",      color = Color3.fromRGB(250, 216, 88),  sparkle = false, shape = "bananamesh",     scale = GIANT },
+	{ name = "Giant Butter Stick", rarity = "Epic",   color = Color3.fromRGB(247, 210, 96),  sparkle = false, shape = "buttermesh",     scale = GIANT },
+	{ name = "Giant Strawberry", rarity = "Epic",     color = Color3.fromRGB(219, 58, 62),   sparkle = false, shape = "strawberrymesh", scale = GIANT },
+
 	-- Legendary
-	{ name = "Nebula",      rarity = "Legendary", color = Color3.fromRGB(110, 70, 220),  scale = 1.7 },
-	{ name = "Sunny",       rarity = "Legendary", color = Color3.fromRGB(255, 200, 60),  scale = 1.7 },
-	-- Mythic
-	{ name = "Eclipse",     rarity = "Mythic",    color = Color3.fromRGB(40, 40, 55),    scale = 2.0 },
+	{ name = "Gold Glitter",    rarity = "Legendary", color = Color3.fromRGB(226, 178, 66),  sparkle = true,  shape = "dumplingmesh" },
+	{ name = "Glow Doughnut",   rarity = "Legendary", color = Color3.fromRGB(132, 244, 120), sparkle = true,  shape = "glowdonutmesh" },
+	{ name = "Giant Rainbow Butter", rarity = "Legendary", color = Color3.fromRGB(196, 124, 220), sparkle = false, shape = "rainbuttermesh", scale = GIANT },
+
+	-- Mythical: the big iridescent pearl ones
+	{ name = "Opal Dumpling",   rarity = "Mythical",  color = Color3.fromRGB(232, 225, 245), sparkle = true,  shape = "opalmesh" },
+	{ name = "Giant Opal Dumpling", rarity = "Mythical", color = Color3.fromRGB(232, 225, 245), sparkle = true, shape = "opalmesh", scale = GIANT },
 }
 
 Config.SquishyByName = {} :: { [string]: any }
@@ -56,10 +97,12 @@ for _, def in Config.Squishies do
 	Config.SquishyByName[def.name] = def
 end
 
--- The two giant patrolling enemies.
+-- The two giant patrolling enemies: monstrous versions of real squishies.
+-- `shape` + `color` (as tint) feed SquishyModels.build; `scale` is huge.
 Config.Enemies = {
 	{
 		name = "Mama Squish",
+		shape = "opalmesh",
 		color = Color3.fromRGB(255, 130, 180),
 		scale = 7,               -- body scale relative to a 1.0-scale squishy
 		patrolSpeed = 7,
@@ -74,6 +117,7 @@ Config.Enemies = {
 	},
 	{
 		name = "Grumpo",
+		shape = "strawberrymesh",
 		color = Color3.fromRGB(150, 90, 220),
 		scale = 5.5,
 		patrolSpeed = 9,
@@ -96,6 +140,77 @@ Config.Field = {
 	SpawnInset = 22,              -- keep spawns this far from the field edge
 	SpawnSpacing = 18,            -- grid spacing between candidate spawn points
 	WaypointInset = 30,           -- enemy patrol rectangle inset from field edge
+}
+
+-- ---------- progression (drives the Essential UI Pack panels) ----------
+
+-- Upgrade tracks bought with cash. Level 1 is the free starting level, so
+-- `prices[n]` is the cost to reach level n + 1. `values[n]` is the effect at
+-- level n; the UI shows values[level] -> values[level + 1] as before/after.
+Config.Upgrades = {
+	-- Left scrolling column in the Upgrades panel.
+	Speed = {
+		title = "Speed",
+		suffix = " spd",
+		-- Base walkspeed at each level.
+		values = { 16, 18, 20, 22, 24, 26, 28, 30 },
+		prices = { 250, 1200, 6000, 30000, 150000, 800000, 4000000 },
+	},
+	-- Right scrolling column.
+	Stealth = {
+		title = "Stealth",
+		suffix = "% notice",
+		-- Multiplier applied to every enemy's notice radius.
+		values = { 1.0, 0.92, 0.85, 0.78, 0.7, 0.62, 0.55, 0.45 },
+		prices = { 400, 2000, 9000, 45000, 220000, 1100000, 6000000 },
+	},
+	-- The wide CarryUpgrade card at the bottom: shrinks the rarity carry
+	-- penalty, so `effective = 1 - (1 - speedMult) * values[level]`.
+	Carry = {
+		title = "Carry",
+		suffix = "% drag",
+		values = { 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3 },
+		prices = { 500, 2500, 11000, 55000, 260000, 1300000, 7000000 },
+	},
+}
+
+Config.Rebirth = {
+	-- Cash needed for rebirth N (1-indexed: [1] is the first rebirth).
+	Costs = { 50000, 500000, 5000000, 50000000, 500000000 },
+	-- Income multiplier granted at each rebirth count (index 1 = 0 rebirths).
+	Multipliers = { 1, 1.5, 2.25, 3.4, 5, 7.5 },
+	-- Rebirth resets money and upgrade levels; placed squishies stay.
+	ResetsUpgrades = true,
+}
+
+Config.Wheel = {
+	SpinCooldown = 300,   -- seconds between free spins
+	StartingSpins = 1,
+	-- Six wedges, matching the pack's SpinWheel.Pattern slots 1..6.
+	-- kind: "cash" (amount), "squishy" (rarity), "speed" (mult + duration)
+	Rewards = {
+		{ kind = "cash",    label = "$500",     amount = 500,   weight = 30 },
+		{ kind = "squishy", label = "Rare",     rarity = "Rare", weight = 22 },
+		{ kind = "cash",    label = "$5K",      amount = 5000,  weight = 20 },
+		{ kind = "speed",   label = "2x Speed", mult = 2, duration = 60, weight = 15 },
+		{ kind = "squishy", label = "Epic",     rarity = "Epic", weight = 10 },
+		{ kind = "squishy", label = "Legendary", rarity = "Legendary", weight = 3 },
+	},
+}
+
+-- Robux developer products / passes. All 0 until they are created in the
+-- Creator Dashboard; the client HIDES any button or pack whose id is still 0,
+-- so nothing here ever guesses an id. Fill these in to switch them on.
+Config.Products = {
+	StarterPack = 0,
+	ProPack = 0,
+	ItemsOnly = 0,
+	CashOnly = 0,
+	Random = 0,
+	WheelSpins3 = 0,
+	WheelSpins9 = 0,
+	CarryUpgrade = 0,
+	RebirthSkip = 0,
 }
 
 Config.Plot = {

@@ -7,6 +7,9 @@
       "$className": "ReplicatedStorage",
       "Shared": {
         "$path": "src/shared"
+      },
+      "SquishyMeshes": {
+        "$path": "Assets/SquishyMeshes.rbxm"
       }
     },
 
@@ -14,6 +17,13 @@
       "$className": "ServerScriptService",
       "Server": {
         "$path": "src/server"
+      }
+    },
+
+    "StarterGui": {
+      "$className": "StarterGui",
+      "MainUi": {
+        "$path": "Assets/MainUi.rbxm"
       }
     },
 

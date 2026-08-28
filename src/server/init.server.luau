@@ -7,26 +7,51 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
--- Remotes the client listens to.
+-- Remotes the client talks to (see the UI Contract in DESIGN.md).
 local remotes = Instance.new("Folder")
 remotes.Name = "Remotes"
-local popup = Instance.new("RemoteEvent")
-popup.Name = "Popup"
-popup.Parent = remotes
+for _, name in { "Popup", "Drop", "BuyUpgrade", "DoRebirth", "Discovered" } do
+	local event = Instance.new("RemoteEvent")
+	event.Name = name
+	event.Parent = remotes
+end
+local spin = Instance.new("RemoteFunction")
+spin.Name = "Spin"
+spin.Parent = remotes
 remotes.Parent = ReplicatedStorage
 
 local services = {} :: any
 services.Config = Config
 services.EconomyService = require(script.EconomyService) :: any
+services.UpgradeService = require(script.UpgradeService) :: any
+services.RebirthService = require(script.RebirthService) :: any
+services.DiscoveryService = require(script.DiscoveryService) :: any
+services.WheelService = require(script.WheelService) :: any
 services.PlotService = require(script.PlotService) :: any
 services.SquishyService = require(script.SquishyService) :: any
 services.EnemyService = require(script.EnemyService) :: any
 
 local map = (require(script.MapBuilder) :: any).Build()
+require(script.LightingService).Apply()
 
-services.EconomyService.Start(services, map)
-services.PlotService.Start(services, map)
-services.SquishyService.Start(services, map)
-services.EnemyService.Start(services, map)
+-- Order matters: economy and progression own the attributes the gameplay
+-- services read, so they start first.
+for _, name in {
+	"EconomyService",
+	"UpgradeService",
+	"RebirthService",
+	"DiscoveryService",
+	"WheelService",
+	"PlotService",
+	"SquishyService",
+	"EnemyService",
+} do
+	local ok, err = pcall(function()
+		services[name].Start(services, map)
+	end)
+	if not ok then
+		warn(("[%s] %s failed to start: %s"):format(Config.GameName, name, tostring(err)))
+	end
+end
 
 print(("[%s] server up"):format(Config.GameName))
