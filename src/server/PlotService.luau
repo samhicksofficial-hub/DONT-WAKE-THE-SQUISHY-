@@ -1,15 +1,19 @@
 --!strict
--- PlotService: claims a plot spot per player, builds the plot structure
--- (floor, low walls, owner sign, slot platforms, collect/unlock pads, deposit
--- pad), runs the income accrual loop, and handles deposit / collect / unlock
--- touches. See DESIGN.md gameplay rules 2, 3, 4 and 6.
+-- PlotService: claims a plot spot per player, builds the gameplay furniture
+-- inside it (slot platforms, collect/unlock pads, deposit pad), runs the income
+-- accrual loop, and handles deposit / collect / unlock touches.
+-- See DESIGN.md gameplay rules 2, 3, 4 and 6.
+--
+-- The BUILDING around that furniture — floor, walls, roof, ceiling lights,
+-- house marker, owner sign and spawn point — belongs to BaseBuilder (see the
+-- Map Design Contract in DESIGN.md). This service asks it for the shell and
+-- then lays its own pieces on the floor top BaseBuilder reports.
 --
 -- Plot local space (the spot CFrame's LookVector faces the field, so -Z is
 -- the plot FRONT toward the walkway and +Z is the BACK):
 --   z = -14   deposit pad (front edge)
 --   z =  -5   front-row collect pads    z =  1   front-row platforms (slots 1-5)
 --   z =   7   back-row collect pads     z = 13   back-row platforms  (slots 6-10)
---   z = 17.5  back wall + owner sign
 -- The front row is staggered +4 studs in X so the back row's pads stay
 -- reachable between the front platforms.
 
@@ -21,9 +25,11 @@ local Config = require(Shared:WaitForChild("Config"))
 local Util = require(Shared:WaitForChild("Util"))
 local SquishyFactory = require(Shared:WaitForChild("SquishyFactory"))
 
-local FLOOR_TOP = 1.2 -- slab top slightly above the walkway (y = 1)
-local WALL_HEIGHT = 3
-local WALL_THICKNESS = 1
+local Palette = Config.Palette
+
+-- Fallback floor height for when BaseBuilder is unavailable; the real value
+-- comes back from BaseBuilder.Build per plot.
+local DEFAULT_FLOOR_TOP = Config.Base.FloorTop :: number
 local TOUCH_DEBOUNCE = 0.4
 
 local SLOT_SPACING = 8
@@ -31,19 +37,18 @@ local FRONT_ROW_STAGGER = 4
 local FRONT_ROW_Z = 1
 local ROW_DEPTH = 12
 local PLATFORM_SIZE = Vector3.new(6, 0.4, 6)
+local PLATFORM_BORDER_OVERHANG = 1.2 -- darker slab under each platform, per side x2
+local PLATFORM_BORDER_THICKNESS = 0.35
 local PAD_DIAMETER = 5
-local PAD_THICKNESS = 0.3
+local PAD_THICKNESS = 0.28
+local PAD_LIFT = 0.06 -- pads float a hair off the floor so they read as flat discs
+local PAD_RIM_EXTRA = 1.1
+local PAD_RIM_THICKNESS = 0.16
 local PAD_FORWARD = 6 -- pad center sits this far in front of its platform center
-local DEPOSIT_SIZE = Vector3.new(10, 0.4, 6)
+local DEPOSIT_SIZE = Vector3.new(10, 0.35, 6)
+local SPAWN_INSET = 4 -- fallback spawn marker distance in from the front edge
+local SPAWN_HEIGHT = 3 -- character pivot height above the floor
 
-local COLOR_FLOOR = Color3.fromRGB(184, 158, 122)
-local COLOR_WALL = Color3.fromRGB(146, 120, 96)
-local COLOR_SIGN = Color3.fromRGB(255, 214, 120)
-local COLOR_PLATFORM = Color3.fromRGB(163, 162, 168)
-local COLOR_PLATFORM_LOCKED = Color3.fromRGB(84, 84, 92)
-local COLOR_COLLECT_PAD = Color3.fromRGB(85, 255, 85)
-local COLOR_DEPOSIT_PAD = Color3.fromRGB(60, 235, 100)
-local COLOR_UNLOCK_PAD = Color3.fromRGB(255, 170, 0)
 local COLOR_MONEY = Color3.fromRGB(85, 255, 85)
 local COLOR_REFUSE = Color3.fromRGB(255, 70, 70)
 local COLOR_WHITE = Color3.new(1, 1, 1)
@@ -73,6 +78,8 @@ type PlotRecord = {
 	spotCFrame: CFrame,
 	baseCFrame: CFrame,
 	model: Model,
+	floorTop: number,
+	spawnPoint: BasePart?,
 	slots: { SlotRecord },
 	depositPad: BasePart,
 	depositFlashing: boolean,
@@ -224,18 +231,34 @@ end
 
 local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	local cf = plot.baseCFrame
-		* CFrame.new(slot.localX, FLOOR_TOP + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+		* CFrame.new(slot.localX, plot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
 		* PAD_UPRIGHT
 	local pad = newPart(
 		plot.model,
 		"CollectPad" .. tostring(slot.index),
 		Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER),
 		cf,
-		COLOR_COLLECT_PAD,
+		Palette.CollectPad,
 		Enum.Material.Neon
 	)
 	pad.Shape = Enum.PartType.Cylinder
 	pad.CanCollide = false
+	-- A darker disc flat on the floor under the pad, so it reads as a tile
+	-- rather than a floating coin. Parented to the pad: it dies with it.
+	local rim = newPart(
+		pad,
+		"Rim",
+		Vector3.new(PAD_RIM_THICKNESS, PAD_DIAMETER + PAD_RIM_EXTRA, PAD_DIAMETER + PAD_RIM_EXTRA),
+		plot.baseCFrame
+			* CFrame.new(slot.localX, plot.floorTop + PAD_RIM_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+			* PAD_UPRIGHT,
+		Palette.SlotBorder,
+		Enum.Material.SmoothPlastic
+	)
+	rim.Shape = Enum.PartType.Cylinder
+	rim.CanCollide = false
+	rim.CanTouch = false
+	rim.CanQuery = false
 	local gui = newBillboard(pad, "PendingGui", 4.5, 1.8, 2.2, 90)
 	slot.collectPad = pad
 	slot.collectLabel = newLabel(gui, "$0", COLOR_MONEY, 1, 1)
@@ -267,7 +290,7 @@ local function unlockSlot(plot: PlotRecord, slot: SlotRecord)
 	end
 	slot.unlockPad = nil
 	slot.unlockGui = nil
-	slot.platform.Color = COLOR_PLATFORM
+	slot.platform.Color = Palette.SlotPlatform
 	createCollectPad(plot, slot)
 	local nextLocked = findNextLockedIndex(plot)
 	if nextLocked ~= nil then
@@ -302,14 +325,14 @@ end
 -- pad is revealed via revealUnlockPad.
 local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	local cf = plot.baseCFrame
-		* CFrame.new(slot.localX, FLOOR_TOP + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+		* CFrame.new(slot.localX, plot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
 		* PAD_UPRIGHT
 	local pad = newPart(
 		plot.model,
 		"UnlockPad" .. tostring(slot.index),
 		Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER),
 		cf,
-		COLOR_UNLOCK_PAD,
+		Palette.UnlockPad,
 		Enum.Material.Neon
 	)
 	pad.Shape = Enum.PartType.Cylinder
@@ -363,7 +386,7 @@ local function flashDepositPad(plot: PlotRecord)
 	pad.Color = COLOR_REFUSE
 	task.delay(0.35, function()
 		if pad.Parent ~= nil then
-			pad.Color = COLOR_DEPOSIT_PAD
+			pad.Color = Palette.DepositPad
 		end
 		plot.depositFlashing = false
 	end)
@@ -396,6 +419,38 @@ local function onDepositTouched(plot: PlotRecord, hitPart: BasePart)
 	end
 end
 
+-- ------------------------------------------------------------------- shell --
+
+-- The building itself is BaseBuilder's job. It is a builder, not a service, so
+-- it is required directly as a sibling module rather than through the services
+-- table. It may be missing on a partial sync: resolve it once, lazily, and fail
+-- soft so a plot is still playable without its shell.
+local baseBuilder: any = nil
+local baseBuilderResolved = false
+local baseBuilderWarned = false
+
+local function getBaseBuilder(): any
+	if not baseBuilderResolved then
+		baseBuilderResolved = true
+		local moduleScript = (script.Parent :: any):FindFirstChild("BaseBuilder")
+		if moduleScript ~= nil then
+			local ok, result = pcall(function()
+				return (require :: any)(moduleScript)
+			end)
+			if ok and typeof(result) == "table" and typeof(result.Build) == "function" then
+				baseBuilder = result
+			elseif not ok then
+				warn(("[PlotService] BaseBuilder failed to load: %s"):format(tostring(result)))
+			end
+		end
+	end
+	if baseBuilder == nil and not baseBuilderWarned then
+		baseBuilderWarned = true
+		warn("[PlotService] BaseBuilder unavailable — plots build without their building shell")
+	end
+	return baseBuilder
+end
+
 -- ---------------------------------------------------------------- plot build --
 
 -- Returns true once the plot is registered.
@@ -405,65 +460,82 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	local baseCFrame = CFrame.new(spotPos.X, 0, spotPos.Z) * spotCFrame.Rotation
 
 	local footprint = Config.Plot.BaseSize :: Vector2
-	local halfWidth = footprint.X / 2
 	local halfDepth = footprint.Y / 2
 
 	local model = Instance.new("Model")
 	model.Name = player.Name
 
-	-- Floor slab, top at FLOOR_TOP.
-	newPart(
-		model,
-		"Floor",
-		Vector3.new(footprint.X, FLOOR_TOP, footprint.Y),
-		baseCFrame * CFrame.new(0, FLOOR_TOP / 2, 0),
-		COLOR_FLOOR,
-		Enum.Material.SmoothPlastic
-	)
+	-- Shell first: floor, walls, roof, ceiling lights, house marker, owner sign
+	-- and spawn point, all reported back with the floor height to build on.
+	local floorTop = DEFAULT_FLOOR_TOP
+	local spawnPoint: BasePart? = nil
+	local shellBuilt = false
+	local builder = getBaseBuilder()
+	if builder ~= nil then
+		local ok, shell = pcall(builder.Build, player, model, baseCFrame)
+		if ok and typeof(shell) == "table" then
+			shellBuilt = true
+			if typeof(shell.floorTop) == "number" then
+				floorTop = shell.floorTop
+			end
+			local point = shell.spawnPoint
+			if typeof(point) == "Instance" and point:IsA("BasePart") then
+				spawnPoint = point
+			end
+		elseif not ok then
+			warn(("[PlotService] BaseBuilder.Build failed for %s: %s"):format(player.Name, tostring(shell)))
+		end
+	end
 
-	-- Low back wall and side walls; the front stays open toward the walkway.
-	newPart(
-		model,
-		"BackWall",
-		Vector3.new(footprint.X, WALL_HEIGHT, WALL_THICKNESS),
-		baseCFrame * CFrame.new(0, FLOOR_TOP + WALL_HEIGHT / 2, halfDepth - WALL_THICKNESS / 2),
-		COLOR_WALL,
-		Enum.Material.SmoothPlastic
-	)
-	for _, sideOffset in { -1, 1 } do
+	if not shellBuilt then
+		-- Bare fallback: just enough floor to stand the gameplay pieces on.
 		newPart(
 			model,
-			sideOffset < 0 and "LeftWall" or "RightWall",
-			Vector3.new(WALL_THICKNESS, WALL_HEIGHT, footprint.Y),
-			baseCFrame * CFrame.new(sideOffset * (halfWidth - WALL_THICKNESS / 2), FLOOR_TOP + WALL_HEIGHT / 2, 0),
-			COLOR_WALL,
+			"Floor",
+			Vector3.new(footprint.X, floorTop, footprint.Y),
+			baseCFrame * CFrame.new(0, floorTop / 2, 0),
+			Palette.BaseFloor,
 			Enum.Material.SmoothPlastic
 		)
 	end
 
-	-- Owner sign above the back wall.
-	local signPart = newPart(
-		model,
-		"OwnerSign",
-		Vector3.new(2, 2, 1),
-		baseCFrame * CFrame.new(0, FLOOR_TOP + WALL_HEIGHT + 2.5, halfDepth - WALL_THICKNESS / 2),
-		COLOR_SIGN,
-		Enum.Material.SmoothPlastic
-	)
-	signPart.CanCollide = false
-	local signGui = newBillboard(signPart, "OwnerGui", 13, 3, 2.2, 160)
-	newLabel(signGui, ("%s's Plot"):format(player.DisplayName), COLOR_WHITE, 1, 1)
+	if spawnPoint == nil then
+		local marker = newPart(
+			model,
+			"SpawnPoint",
+			Vector3.new(2, 1, 2),
+			baseCFrame * CFrame.new(0, floorTop + SPAWN_HEIGHT, -(halfDepth - SPAWN_INSET)),
+			Palette.BaseFloor,
+			Enum.Material.SmoothPlastic
+		)
+		marker.Transparency = 1
+		marker.CanCollide = false
+		marker.CanTouch = false
+		marker.CanQuery = false
+		spawnPoint = marker
+	end
 
 	-- Deposit pad at the front edge, facing the walkway.
 	local depositPad = newPart(
 		model,
 		"DepositPad",
 		DEPOSIT_SIZE,
-		baseCFrame * CFrame.new(0, FLOOR_TOP + DEPOSIT_SIZE.Y / 2, -(halfDepth - 4)),
-		COLOR_DEPOSIT_PAD,
+		baseCFrame * CFrame.new(0, floorTop + PAD_LIFT + DEPOSIT_SIZE.Y / 2, -(halfDepth - 4)),
+		Palette.DepositPad,
 		Enum.Material.Neon
 	)
 	depositPad.CanCollide = false
+	local depositBorder = newPart(
+		depositPad,
+		"Border",
+		Vector3.new(DEPOSIT_SIZE.X + PAD_RIM_EXTRA, PAD_RIM_THICKNESS, DEPOSIT_SIZE.Z + PAD_RIM_EXTRA),
+		baseCFrame * CFrame.new(0, floorTop + PAD_RIM_THICKNESS / 2, -(halfDepth - 4)),
+		Palette.SlotBorder,
+		Enum.Material.SmoothPlastic
+	)
+	depositBorder.CanCollide = false
+	depositBorder.CanTouch = false
+	depositBorder.CanQuery = false
 	local depositGui = newBillboard(depositPad, "DepositGui", 6, 2, 2.8, 110)
 	newLabel(depositGui, "Deposit", COLOR_WHITE, 1, 1)
 
@@ -473,6 +545,8 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 		spotCFrame = spotCFrame,
 		baseCFrame = baseCFrame,
 		model = model,
+		floorTop = floorTop,
+		spawnPoint = spawnPoint,
 		slots = {},
 		depositPad = depositPad,
 		depositFlashing = false,
@@ -493,12 +567,30 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			+ (row == 0 and FRONT_ROW_STAGGER or 0)
 		local localZ = FRONT_ROW_Z + row * ROW_DEPTH
 		local unlocked = index <= (Config.Plot.StartUnlocked :: number)
+		-- Each slot reads as a tile: a darker border slab flat on the floor with
+		-- the grey platform sitting on top of it.
+		local border = newPart(
+			model,
+			"SlotBorder" .. tostring(index),
+			Vector3.new(
+				PLATFORM_SIZE.X + PLATFORM_BORDER_OVERHANG,
+				PLATFORM_BORDER_THICKNESS,
+				PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
+			),
+			baseCFrame * CFrame.new(localX, floorTop + PLATFORM_BORDER_THICKNESS / 2, localZ),
+			Palette.SlotBorder,
+			Enum.Material.SmoothPlastic
+		)
+		border.CanCollide = false
+		border.CanTouch = false
+		border.CanQuery = false
 		local platform = newPart(
 			model,
 			"SlotPlatform" .. tostring(index),
 			PLATFORM_SIZE,
-			baseCFrame * CFrame.new(localX, FLOOR_TOP + PLATFORM_SIZE.Y / 2, localZ),
-			unlocked and COLOR_PLATFORM or COLOR_PLATFORM_LOCKED,
+			baseCFrame
+				* CFrame.new(localX, floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
+			unlocked and Palette.SlotPlatform or Palette.SlotBorder,
 			Enum.Material.SmoothPlastic
 		)
 		local slot: SlotRecord = {
@@ -627,6 +719,20 @@ function PlotService.GetPlotOrigin(player: Player): CFrame?
 		return plot.spotCFrame
 	end
 	return nil
+end
+
+-- Where SpawnService drops this player's character: the base's SpawnPoint part,
+-- facing out toward the field. Nil while the player has no plot yet.
+function PlotService.GetSpawnCFrame(player: Player): CFrame?
+	local plot = plots[player]
+	if plot == nil then
+		return nil
+	end
+	local point = plot.spawnPoint
+	if point == nil or point.Parent == nil then
+		return nil
+	end
+	return point.CFrame
 end
 
 -- Drops a squishy straight onto a free slot without the player carrying it

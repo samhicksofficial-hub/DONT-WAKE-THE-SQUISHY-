@@ -294,3 +294,80 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 `Shop` packs, the `Random` button, and the Wheel's Robux buttons need real
 developer-product ids. `Config.Products` holds them; while an id is 0 the client
 HIDES that button/pack. No code guesses ids.
+
+---
+
+# Map Design Contract (reference-matched build)
+
+The look is matched to the reference screenshots of the genre leader. Anything
+here overrides earlier world-convention notes it contradicts.
+
+## The arena
+Seen from above: a bright green grass field, ringed on the inside by a wide
+**brown dirt border**, enclosed by **tall dark boundary walls**, under a night
+sky. Bases sit in rows outside the field, facing in.
+
+- `Config.Field.Size` grows to 240 x 200. Grass floor top stays y = 1.
+- **Dirt border**: a `Config.Field.DirtWidth` (18) ring of brown mulch INSIDE
+  the field bounds, hugging the wall. Purely visual — `isInField` and the
+  squishy spawn grid still use the full field rect, and squishies may sit on it.
+- **Boundary wall**: 14 studs tall, dark charcoal, around the outside of the
+  walkway, with a gap at each plot so players walk straight into their base.
+- **Walkway** stays the safe ring between field and bases.
+- `plotSpots` becomes **4 along the south edge and 4 along the north**, evenly
+  spaced across the field width, each facing the field (perpendicular, never
+  angled). This is the reference's row-of-bases look.
+- **Safe zone markings**: a translucent light strip on the walkway in front of
+  each base, plus a "SAFE ZONE" SurfaceGui on the walkway floor.
+- **Field props** (decor only, all `CanCollide` where sensible, none inside the
+  squishy spawn grid): a few market stalls (post + striped awning + counter),
+  a tall "TOP TIME" leaderboard sign near the middle of one edge, and a glowing
+  portal frame. Props must not block walking lanes or sit within 10 studs of a
+  spawn point.
+
+## A base (what PlotService builds per player)
+An enclosed building, open at the front toward the field:
+
+- **Floor**: grey slab, top at 1.2.
+- **Side + back walls**: dark charcoal, 14 studs tall, white trim strip along
+  the top edge. The back wall's INNER face is warm orange (a thin coloured
+  panel), matching the reference interior.
+- **Window openings**: two on each side wall — a white frame with a dark
+  translucent pane, non-collidable.
+- **Roof**: a flat dark slab over the whole footprint.
+- **Ceiling lights**: four white Neon panels on the roof's underside, each with
+  a `PointLight` (Brightness ~1.6, Range ~26).
+- **House marker**: a stylised house floating above the roof, built from parts
+  (orange body, red wedge roof, white door + blue window), bobbing gently and
+  spinning slowly. This replaces the reference's UI house icon — no image asset.
+- **Owner sign**: an orange board on the front-left of the base carrying the
+  owner's avatar via `Players:GetUserThumbnailAsync` (Size48x48, HeadShot) on an
+  ImageLabel in a SurfaceGui, with their display name under it. Wrapped in
+  pcall + task.spawn — a thumbnail fetch yields and must never block the build.
+- **Slot platforms**: grey squares with a lighter border, in the 2-row grid the
+  gameplay already uses.
+- **Collect pads** keep their gameplay behaviour but render as flat rounded
+  green pads (a cylinder is fine) sitting just above the floor.
+- **Spawn point**: an invisible anchored part named `SpawnPoint` at the front
+  centre of the base floor, ~4 studs in from the front edge.
+
+## Spawning
+Players spawn **at their own base**, every time — first join and every respawn.
+- `PlotService.GetSpawnCFrame(player) -> CFrame?` returns that base's spawn
+  point (facing out toward the field).
+- `SpawnService` (new, started last) waits for the plot to exist, then pivots
+  the character there on every `CharacterAdded`, and re-pivots once if the
+  character is still at the default spawn a moment later.
+- The world `SpawnLocation` stays (Roblox needs one) but is parked under the
+  map, `Neutral`, and out of the way; it is only where a character materialises
+  for the instant before SpawnService moves it.
+
+## Lighting
+Night, to match the reference: `ClockTime` 0, `Brightness` ~2, a deep blue-purple
+ambient, the pack's star Sky, and Atmosphere/Bloom kept. Bases read as lit
+interiors because of their ceiling lights.
+
+## Still parked (needs the user)
+Icon-based UI props in the reference (Slap Protection shield, Lock Base padlock,
+gear/shop item art) need uploaded image assets and gamepass ids; they are NOT
+faked with lookalike geometry.

@@ -133,13 +133,50 @@ Config.Enemies = {
 }
 
 Config.Field = {
-	Size = Vector2.new(200, 200), -- XZ studs, centered at origin
-	WalkwayWidth = 26,            -- safe ring around the field
-	SpawnInterval = 4,            -- seconds between field spawn attempts
-	MaxSquishies = 24,            -- cap of freshly-spawned field squishies
-	SpawnInset = 22,              -- keep spawns this far from the field edge
-	SpawnSpacing = 18,            -- grid spacing between candidate spawn points
-	WaypointInset = 30,           -- enemy patrol rectangle inset from field edge
+	Size = Vector2.new(240, 200),  -- XZ studs, centered at origin
+	WalkwayWidth = 26,             -- safe ring around the field
+	DirtWidth = 18,                -- brown mulch border inside the field edge
+	WallHeight = 14,               -- dark boundary wall around the arena
+	SpawnInterval = 4,             -- seconds between field spawn attempts
+	MaxSquishies = 26,             -- cap of freshly-spawned field squishies
+	SpawnInset = 26,               -- keep spawns this far from the field edge
+	SpawnSpacing = 18,             -- grid spacing between candidate spawn points
+	WaypointInset = 34,            -- enemy patrol rectangle inset from field edge
+}
+
+-- The look, matched to the reference screenshots (see the Map Design Contract
+-- in DESIGN.md). Base = one player's enclosed building.
+Config.Base = {
+	WallHeight = 14,
+	WallThickness = 1.5,
+	RoofThickness = 1.2,
+	FloorTop = 1.2,
+	TrimHeight = 0.8,      -- white strip along the top of each wall
+	WindowWidth = 10,
+	WindowHeight = 5,
+	WindowSill = 5,        -- height of the window's bottom edge above the floor
+	CeilingLights = 4,
+}
+
+Config.Palette = {
+	Grass = Color3.fromRGB(96, 200, 62),
+	Dirt = Color3.fromRGB(150, 88, 44),
+	Walkway = Color3.fromRGB(196, 199, 205),
+	BoundaryWall = Color3.fromRGB(46, 46, 52),
+	BaseWall = Color3.fromRGB(58, 58, 66),
+	BaseTrim = Color3.fromRGB(240, 243, 248),
+	BaseBack = Color3.fromRGB(196, 104, 42),   -- warm orange interior wall
+	BaseFloor = Color3.fromRGB(128, 130, 138),
+	BaseRoof = Color3.fromRGB(38, 38, 44),
+	SlotPlatform = Color3.fromRGB(150, 152, 160),
+	SlotBorder = Color3.fromRGB(96, 98, 106),
+	CollectPad = Color3.fromRGB(120, 240, 96),
+	DepositPad = Color3.fromRGB(60, 235, 100),
+	UnlockPad = Color3.fromRGB(255, 170, 0),
+	SignBoard = Color3.fromRGB(206, 108, 46),
+	HouseBody = Color3.fromRGB(247, 168, 60),
+	HouseRoof = Color3.fromRGB(226, 68, 64),
+	SafeZone = Color3.fromRGB(120, 220, 255),
 }
 
 -- ---------- progression (drives the Essential UI Pack panels) ----------
@@ -221,7 +258,7 @@ Config.Plot = {
 	-- Price to unlock slot N (1-indexed; entries <= StartUnlocked are ignored).
 	UnlockPrices = { 0, 0, 0, 0, 150, 1000, 7500, 50000, 350000, 2500000 },
 	AccrueTick = 0.5,         -- seconds between income accrual updates
-	BaseSize = Vector2.new(48, 36), -- XZ footprint of a plot
+	BaseSize = Vector2.new(56, 42), -- XZ footprint of a plot (4 per 240-wide edge)
 }
 
 return Config

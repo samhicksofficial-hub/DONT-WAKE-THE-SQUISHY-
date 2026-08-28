@@ -30,6 +30,7 @@ services.WheelService = require(script.WheelService) :: any
 services.PlotService = require(script.PlotService) :: any
 services.SquishyService = require(script.SquishyService) :: any
 services.EnemyService = require(script.EnemyService) :: any
+services.SpawnService = require(script.SpawnService) :: any
 
 local map = (require(script.MapBuilder) :: any).Build()
 require(script.LightingService).Apply()
@@ -45,6 +46,8 @@ for _, name in {
 	"PlotService",
 	"SquishyService",
 	"EnemyService",
+	-- Last: it moves arriving characters onto the base PlotService just built.
+	"SpawnService",
 } do
 	local ok, err = pcall(function()
 		services[name].Start(services, map)
