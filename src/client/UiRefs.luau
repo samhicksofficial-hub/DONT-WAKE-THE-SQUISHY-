@@ -177,6 +177,14 @@ local HOVER_IN = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.
 -- Click handler plus a small hover/press pop, using a UIScale so the pack's
 -- own sizing (aspect ratios, list layouts) is never touched.
 function UiRefs.bindButton(button: GuiButton, onClick: () -> ())
+	-- The pack authors several buttons (every panel's Close, among others) with
+	-- Active = false, and a GuiButton with Active off never fires its click
+	-- events — the X simply did nothing. Binding a handler means we intend the
+	-- button to be pressable, so switch it on here. Callers that deliberately
+	-- disable a button (a locked upgrade row) set Active = false afterwards,
+	-- during their own refresh, so this never fights them.
+	button.Active = true
+
 	local scale = button:FindFirstChildOfClass("UIScale")
 	if not scale then
 		scale = Instance.new("UIScale")
