@@ -296,6 +296,20 @@ Config.EventBoard = {
 	Offset = Vector3.new(0, 0, -0.62), -- fraction of the field, toward the north edge
 }
 
+-- --------------------------------------------------------- daily rewards --
+-- A seven day ladder. Logging in on consecutive real-life days walks it up;
+-- missing a day drops you back to day 1. Day 7 is worth coming back for.
+--   kind: "cash" (amount) | "squishy" (rarity, optional variant) | "spins" (count)
+Config.DailyRewards = {
+	{ day = 1, kind = "cash",    label = "$50k",          amount = 50e3 },
+	{ day = 2, kind = "cash",    label = "$1.5m",         amount = 1.5e6 },
+	{ day = 3, kind = "spins",   label = "3 Spins",       spins = 3 },
+	{ day = 4, kind = "cash",    label = "$25m",          amount = 25e6 },
+	{ day = 5, kind = "squishy", label = "Epic Squishy",  rarity = "Epic" },
+	{ day = 6, kind = "cash",    label = "$500m",         amount = 500e6 },
+	{ day = 7, kind = "squishy", label = "GOLD Mythical", rarity = "Mythical", variant = "Gold" },
+}
+
 Config.Rebirth = {
 	-- Cash needed for rebirth N (1-indexed: [1] is the first rebirth).
 	Costs = { 50000, 500000, 5000000, 50000000, 500000000 },

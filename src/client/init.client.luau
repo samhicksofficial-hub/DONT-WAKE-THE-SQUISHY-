@@ -12,7 +12,7 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Co
 -- UiRefs resolves the pack tree first so the rest can assume it exists.
 require(script:WaitForChild("UiRefs")).get()
 
-for _, moduleName in { "Hud", "AlertUi", "Panels", "IndexUi", "UpgradesUi", "RebirthUi", "WheelUi", "Popups" } do
+for _, moduleName in { "Hud", "AlertUi", "Panels", "IndexUi", "UpgradesUi", "RebirthUi", "WheelUi", "DailyUi", "Popups" } do
 	local module = script:FindFirstChild(moduleName)
 	if module then
 		local ok, err = pcall(function()

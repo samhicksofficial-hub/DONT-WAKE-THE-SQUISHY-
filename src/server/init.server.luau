@@ -15,9 +15,11 @@ for _, name in { "Popup", "Drop", "BuyUpgrade", "DoRebirth", "Discovered" } do
 	event.Name = name
 	event.Parent = remotes
 end
-local spin = Instance.new("RemoteFunction")
-spin.Name = "Spin"
-spin.Parent = remotes
+for _, name in { "Spin", "DailyClaim" } do
+	local fn = Instance.new("RemoteFunction")
+	fn.Name = name
+	fn.Parent = remotes
+end
 remotes.Parent = ReplicatedStorage
 
 local services = {} :: any
@@ -32,6 +34,7 @@ services.SquishyService = require(script.SquishyService) :: any
 services.EnemyService = require(script.EnemyService) :: any
 services.SpawnService = require(script.SpawnService) :: any
 services.EventService = require(script.EventService) :: any
+services.DailyService = require(script.DailyService) :: any
 
 local map = (require(script.MapBuilder) :: any).Build()
 require(script.LightingService).Apply()
@@ -50,6 +53,7 @@ for _, name in {
 	-- Last: it moves arriving characters onto the base PlotService just built.
 	"SpawnService",
 	"EventService",
+	"DailyService",
 } do
 	local ok, err = pcall(function()
 		services[name].Start(services, map)
