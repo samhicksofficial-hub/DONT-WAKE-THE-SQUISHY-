@@ -337,22 +337,23 @@ Config.Products = {
 
 Config.Plot = {
 	Count = 8,                -- plot spots around the field
-	Floors = 2,               -- storeys per base; slots fill the ground floor first
+	-- Floors are BOUGHT. Everyone starts with the ground floor; up to MaxAbove
+	-- storeys can be added on top and MaxBelow basements dug underneath, each
+	-- one dearer than the last. A bought floor arrives with all its slots open.
+	MaxAbove = 4,
+	MaxBelow = 4,
+	-- Price of the Nth extra floor, counting both directions together, so the
+	-- eighth floor costs the same whichever way you grew.
+	FloorPrices = { 500e3, 6e6, 75e6, 900e6, 11e9, 140e9, 1.7e12, 20e12 },
 	SlotsPerRow = 5,
 	RowsPerFloor = 2,
-	-- Floors * RowsPerFloor * SlotsPerRow. Slots 1-10 are downstairs,
-	-- 11-20 upstairs, so the second storey is something you grow into.
-	SlotCount = 20,
+	-- Slots on ONE floor. The ground floor sells its slots individually (the
+	-- early game); every bought floor arrives with all ten already open, which
+	-- is what you are paying the floor price for.
+	SlotsPerFloor = 10,
 	StartUnlocked = 4,
-	-- Price to unlock slot N (1-indexed; entries <= StartUnlocked are ignored).
-	UnlockPrices = {
-		0, 0, 0, 0,
-		150, 1000, 7500, 50000, 350000, 2500000,
-		-- Upstairs: the second storey is late-game, priced past the first
-		-- rebirths rather than as a straight continuation.
-		18e6, 120e6, 800e6, 5e9, 32e9,
-		200e9, 1.3e12, 8e12, 50e12, 300e12,
-	},
+	-- Price to unlock ground-floor slot N (entries <= StartUnlocked ignored).
+	UnlockPrices = { 0, 0, 0, 0, 150, 1000, 7500, 50000, 350000, 2500000 },
 	AccrueTick = 0.5,         -- seconds between income accrual updates
 	BaseSize = Vector2.new(56, 42), -- XZ footprint of a plot (4 per 240-wide edge)
 }

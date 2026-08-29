@@ -63,6 +63,7 @@ type SlotRecord = {
 	localX: number,
 	localZ: number,
 	floorTop: number,       -- the storey this slot stands on
+	slotOnFloor: number,    -- 1..SlotsPerFloor position within its own storey
 	unlocked: boolean,
 	occupied: boolean,
 	income: number,
@@ -103,6 +104,11 @@ local servicesRef: any = nil
 local mapRef: any = nil
 local popupRemote: RemoteEvent = nil :: any
 local plots: { [Player]: PlotRecord } = {}
+-- Buying a floor rebuilds the base, which replaces the pad — so the cooldown
+-- has to outlive it, or a player standing on the pad buys every floor they can
+-- afford in one go.
+local FLOOR_BUY_COOLDOWN = 3
+local lastFloorBuy: { [Player]: number } = {}
 local spotUsed: { boolean } = {}
 
 -- ---------------------------------------------------------------- builders --
@@ -324,7 +330,8 @@ local function onUnlockTouched(plot: PlotRecord, slot: SlotRecord, hitPart: Base
 		return
 	end
 	slot.lastTouch = now
-	local price = Config.Plot.UnlockPrices[slot.index] or 0
+	-- Prices are per position ON the ground floor, not per global slot index.
+	local price = Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
 	if not servicesRef.EconomyService.TrySpend(plot.player, price) then
 		return
 	end
@@ -355,7 +362,8 @@ local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	layout.FillDirection = Enum.FillDirection.Vertical
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Parent = gui
-	local price = Config.Plot.UnlockPrices[slot.index] or 0
+	-- Prices are per position ON the ground floor, not per global slot index.
+	local price = Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
 	newLabel(gui, Util.formatMoney(price), COLOR_MONEY, 1, 0.55)
 	newLabel(gui, "Unlock", COLOR_WHITE, 2, 0.45)
 	slot.unlockPad = pad
@@ -560,6 +568,59 @@ end
 -- ---------------------------------------------------------------- plot build --
 
 -- Returns true once the plot is registered.
+-- Defined below (it needs buildPlot), declared here so buildPlot can call it.
+local buildFloorPrompt: (PlotRecord) -> ()
+
+-- ----------------------------------------------------------------- floors --
+-- Floors are bought one at a time, alternating upward and downward so the
+-- building grows in both directions. Buying one REBUILDS the base at the new
+-- height and puts every placed squishy back exactly as it was — simpler and
+-- far less error-prone than splicing new geometry into a live building.
+
+-- How many extra floors this player owns, and which direction the next one goes.
+local function floorCounts(player: Player): (number, number)
+	local above = tonumber(player:GetAttribute("FloorsAbove")) or 0
+	local below = tonumber(player:GetAttribute("FloorsBelow")) or 0
+	return math.floor(above), math.floor(below)
+end
+
+-- Price of the next floor, or nil when the base is fully built out.
+local function nextFloorCost(player: Player): (number?, string?)
+	local above, below = floorCounts(player)
+	local owned = above + below
+	local price = (Config.Plot.FloorPrices :: { number })[owned + 1]
+	if price == nil then
+		return nil, nil
+	end
+	-- Alternate up, down, up, down... so the tower and the basement grow
+	-- together rather than one running away.
+	local goUp = above <= below and above < (Config.Plot.MaxAbove :: number)
+	if not goUp and below >= (Config.Plot.MaxBelow :: number) then
+		if above >= (Config.Plot.MaxAbove :: number) then
+			return nil, nil
+		end
+		return price, "above"
+	end
+	return price, goUp and "above" or "below"
+end
+
+-- Snapshot of everything a rebuild must restore.
+local function snapshotSlots(plot: PlotRecord): { any }
+	local saved = {}
+	for _, slot in plot.slots do
+		if slot.occupied and slot.squishy ~= nil then
+			table.insert(saved, {
+				squishyName = slot.squishy:GetAttribute("SquishyName"),
+				variant = slot.squishy:GetAttribute("Variant"),
+				level = slot.level,
+				pending = slot.pending,
+				unlocked = slot.unlocked,
+			})
+		end
+	end
+	return saved
+end
+
 local function buildPlot(player: Player, spotIndex: number): boolean
 	local spotCFrame = mapRef.plotSpots[spotIndex] :: CFrame
 	local spotPos = spotCFrame.Position
@@ -575,11 +636,13 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	-- and spawn point, all reported back with the floor height to build on.
 	local floorTop = DEFAULT_FLOOR_TOP
 	local floorTops: { number } = { DEFAULT_FLOOR_TOP }
+	local groundIndex = 1
 	local spawnPoint: BasePart? = nil
 	local shellBuilt = false
 	local builder = getBaseBuilder()
 	if builder ~= nil then
-		local ok, shell = pcall(builder.Build, player, model, baseCFrame)
+		local above, below = floorCounts(player)
+		local ok, shell = pcall(builder.Build, player, model, baseCFrame, { above = above, below = below })
 		if ok and typeof(shell) == "table" then
 			shellBuilt = true
 			if typeof(shell.floorTop) == "number" then
@@ -588,6 +651,9 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			-- One entry per storey; slots above the ground floor stand on these.
 			if typeof(shell.floorTops) == "table" and #shell.floorTops > 0 then
 				floorTops = shell.floorTops
+			end
+			if typeof(shell.groundIndex) == "number" then
+				groundIndex = shell.groundIndex
 			end
 			local point = shell.spawnPoint
 			if typeof(point) == "Instance" and point:IsA("BasePart") then
@@ -674,18 +740,25 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	local slotsPerRow = Config.Plot.SlotsPerRow :: number
 	local rowsPerFloor = math.max(1, Config.Plot.RowsPerFloor :: number)
 	local slotsPerFloor = slotsPerRow * rowsPerFloor
-	for index = 1, Config.Plot.SlotCount :: number do
+	-- Ten slots per storey the base owns, laid floor by floor from the deepest
+	-- basement up. The ground floor sells its slots one at a time; a floor you
+	-- BOUGHT arrives with all ten already open.
+	local totalSlots = slotsPerFloor * #floorTops
+	for index = 1, totalSlots do
 		local floorIndex = math.floor((index - 1) / slotsPerFloor)
 		local withinFloor = (index - 1) % slotsPerFloor
 		local row = math.floor(withinFloor / slotsPerRow)
 		local col = withinFloor % slotsPerRow
-		-- Upper storeys stand on their own slab; fall back to the ground floor
-		-- if the shell reported fewer floors than the config asks for.
 		local slotFloorTop = floorTops[floorIndex + 1] or floorTop
+		local isGroundFloor = (floorIndex + 1) == groundIndex
 		local localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING
 			+ (row == 0 and FRONT_ROW_STAGGER or 0)
 		local localZ = FRONT_ROW_Z + row * ROW_DEPTH
-		local unlocked = index <= (Config.Plot.StartUnlocked :: number)
+		-- Ground floor: the usual staged unlock. Any other floor was paid for
+		-- as a whole, so every slot on it is open from the moment it exists.
+		local unlocked = if isGroundFloor
+			then withinFloor < (Config.Plot.StartUnlocked :: number)
+			else true
 		-- Each slot reads as a tile: a darker border slab flat on the floor with
 		-- the grey platform sitting on top of it.
 		local border = newPart(
@@ -717,6 +790,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			localX = localX,
 			localZ = localZ,
 			floorTop = slotFloorTop,
+			slotOnFloor = withinFloor + 1,
 			unlocked = unlocked,
 			occupied = false,
 			income = 0,
@@ -761,6 +835,8 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	end
 
 	plots[player] = plot
+	-- The purchase point for the next storey, up or down.
+	pcall(buildFloorPrompt, plot)
 	return true
 end
 
@@ -807,6 +883,143 @@ local function buildVacant(spotIndex: number)
 	vacantModels[spotIndex] = model
 end
 
+-- Rebuilds a player's base at its current floor count and puts every placed
+-- squishy back where it was. Called after buying a floor.
+local function rebuildPlot(player: Player)
+	local plot = plots[player]
+	if plot == nil then
+		return
+	end
+	local saved = snapshotSlots(plot)
+	local groundUnlocks = 0
+	for _, slot in plot.slots do
+		if slot.unlocked and slot.slotOnFloor <= (Config.Plot.SlotsPerFloor :: number) then
+			groundUnlocks = math.max(groundUnlocks, slot.slotOnFloor)
+		end
+	end
+
+	local spotIndex = plot.spotIndex
+	for _, connection in plot.connections do
+		connection:Disconnect()
+	end
+	plot.model:Destroy()
+	plots[player] = nil
+
+	local ok, built = pcall(buildPlot, player, spotIndex)
+	if not ok or built ~= true then
+		warn(("[PlotService] rebuild failed for %s: %s"):format(player.Name, tostring(built)))
+		return
+	end
+
+	-- Restore: ground-floor unlocks first, then the squishies in slot order.
+	local fresh = plots[player]
+	if fresh == nil then
+		return
+	end
+	for _, slot in fresh.slots do
+		if slot.slotOnFloor <= groundUnlocks then
+			slot.unlocked = true
+		end
+	end
+	local index = 1
+	for _, slot in fresh.slots do
+		local entry = saved[index]
+		if entry == nil then
+			break
+		end
+		if slot.unlocked and not slot.occupied and entry.squishyName ~= nil then
+			local def = Config.SquishyByName[entry.squishyName]
+			if def ~= nil then
+				local defCopy = table.clone(def)
+				defCopy.variant = entry.variant
+				local placedOk = pcall(placeSquishy, fresh, slot, defCopy)
+				if placedOk then
+					slot.level = entry.level or 1
+					slot.pending = entry.pending or 0
+					refreshSlotLevel(slot)
+					updateCollectLabel(fresh, slot)
+				end
+			end
+			index += 1
+		end
+	end
+end
+
+-- The "Next Floor" purchase point: a prompt at the back of the base that adds
+-- a storey (alternating up and down) and rebuilds around what is already there.
+function buildFloorPrompt(plot: PlotRecord)
+	local player = plot.player
+	local footprint = Config.Plot.BaseSize :: Vector2
+	local post = newPart(
+		plot.model,
+		"FloorUnlock",
+		Vector3.new(5, 6, 2),
+		plot.baseCFrame * CFrame.new(footprint.X / 2 - 6, plot.floorTop + 3, footprint.Y / 2 - 4),
+		Palette.UnlockPad,
+		Enum.Material.Neon
+	)
+	post.CanCollide = false
+	post.CanTouch = true
+
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "FloorPrompt"
+	prompt.ActionText = "Unlock!"
+	prompt.ObjectText = "Next Floor"
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = post
+
+	local function refresh()
+		local cost, direction = nextFloorCost(player)
+		if cost == nil then
+			prompt.Enabled = false
+			post.Transparency = 1
+			return
+		end
+		prompt.Enabled = true
+		post.Transparency = 0
+		prompt.ObjectText = ("Next Floor (%s)"):format(direction == "below" and "basement" or "upstairs")
+		prompt.ActionText = ("%s  Unlock!"):format(Util.formatMoney(cost))
+	end
+	refresh()
+
+	local function buyFloor(buyer: Player)
+		if buyer ~= player then
+			return
+		end
+		local now = os.clock()
+		if now - (lastFloorBuy[player] or 0) < FLOOR_BUY_COOLDOWN then
+			return
+		end
+		lastFloorBuy[player] = now
+		local cost, direction = nextFloorCost(player)
+		if cost == nil or direction == nil then
+			return
+		end
+		if not servicesRef.EconomyService.TrySpend(player, cost) then
+			return
+		end
+		local above, below = floorCounts(player)
+		if direction == "above" then
+			player:SetAttribute("FloorsAbove", above + 1)
+		else
+			player:SetAttribute("FloorsBelow", below + 1)
+		end
+		-- The rebuild replaces this pad along with the rest of the base.
+		task.spawn(rebuildPlot, player)
+	end
+
+	table.insert(plot.connections, prompt.Triggered:Connect(buyFloor))
+	-- Walking into it works too: the prompt is the advertised way in, but every
+	-- other purchase in the base is a pad you step on, so this matches.
+	table.insert(plot.connections, post.Touched:Connect(function(hitPart: BasePart)
+		if isOwnerTouch(plot, hitPart) then
+			buyFloor(player)
+		end
+	end))
+end
+
 local function claimPlot(player: Player)
 	if plots[player] ~= nil then
 		return
@@ -842,6 +1055,7 @@ local function releasePlot(player: Player)
 		return
 	end
 	plots[player] = nil
+	lastFloorBuy[player] = nil
 	spotUsed[plot.spotIndex] = false
 	for _, connection in plot.connections do
 		connection:Disconnect()

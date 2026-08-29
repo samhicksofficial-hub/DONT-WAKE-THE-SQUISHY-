@@ -26,8 +26,9 @@ local BaseBuilder = {}
 
 export type BaseShell = {
 	spawnPoint: BasePart,
-	floorTop: number,        -- ground floor, kept for callers that only need one
-	floorTops: { number },   -- one entry per storey, lowest first
+	floorTop: number,        -- the GROUND floor (players spawn here)
+	floorTops: { number },   -- one entry per storey, lowest (deepest) first
+	groundIndex: number,     -- which floorTops entry is the ground floor
 }
 
 local Palette = Config.Palette :: any
@@ -40,12 +41,15 @@ local HALF_WIDTH = FOOTPRINT.X / 2
 local HALF_DEPTH = FOOTPRINT.Y / 2
 
 local FLOOR_TOP = Config.Base.FloorTop :: number
-local FLOORS = math.max(1, Config.Plot.Floors :: number)
+-- Floors are decided per base at build time (they are bought), so these are
+-- the CEILINGS the geometry must cope with, not a fixed count.
+local MAX_ABOVE = Config.Plot.MaxAbove :: number
+local MAX_BELOW = Config.Plot.MaxBelow :: number
 local FLOOR_HEIGHT = Config.Base.FloorHeight :: number
 local SLAB_T = Config.Base.FloorSlabThickness :: number
 -- One storey per floor: the building grows upward rather than the rooms
 -- getting shorter as floors are added.
-local WALL_H = FLOOR_HEIGHT * FLOORS
+local WALL_H = FLOOR_HEIGHT -- one storey; buildShell stacks more as bought
 local WALL_T = Config.Base.WallThickness :: number
 local TRIM_H = Config.Base.TrimHeight :: number
 local ROOF_T = Config.Base.RoofThickness :: number
@@ -54,7 +58,11 @@ local WINDOW_H = Config.Base.WindowHeight :: number
 local WINDOW_SILL = Config.Base.WindowSill :: number
 local LIGHT_COUNT = Config.Base.CeilingLights :: number
 
-local WALL_TOP = FLOOR_TOP + WALL_H
+-- Set alongside FLOOR_TOPS: the shell spans every storey the base owns, so a
+-- basement drops the base of the walls and an upper floor raises the roof.
+local SHELL_BASE = FLOOR_TOP        -- underside of the lowest floor
+local SHELL_HEIGHT = FLOOR_HEIGHT   -- lowest floor to ceiling of the highest
+local WALL_TOP = FLOOR_TOP + FLOOR_HEIGHT
 local ROOF_TOP = WALL_TOP + ROOF_T
 
 -- Trim stands proud of the wall on both faces so it reads as a moulding.
@@ -194,11 +202,30 @@ end
 
 -- Floor slab, three walls, the white trim band and front pillars, the warm
 -- orange inner facing on the back wall, and the roof.
--- Walking surface height of each storey, lowest first. Storey 1 is the base
--- floor; every one above sits a full FLOOR_HEIGHT higher, on its own slab.
-local FLOOR_TOPS: { number } = {}
-for level = 1, FLOORS do
-	table.insert(FLOOR_TOPS, FLOOR_TOP + (level - 1) * FLOOR_HEIGHT)
+-- Walking surface height of each storey, LOWEST FIRST. Floors are bought, so
+-- these are set per base at the top of Build and read by every helper below.
+-- Build never yields between setting and using them (the avatar fetch is
+-- task.spawn'd), so a second base cannot interleave and steal them.
+local FLOOR_TOPS: { number } = { FLOOR_TOP }
+local FLOORS = 1
+local GROUND_INDEX = 1
+
+-- Storey heights for a base with `above` floors on top and `below` beneath.
+-- Index 1 is the deepest basement; GROUND_INDEX is the ground floor.
+local function computeFloorTops(above: number, below: number)
+	above = math.clamp(math.floor(above or 0), 0, MAX_ABOVE)
+	below = math.clamp(math.floor(below or 0), 0, MAX_BELOW)
+	FLOOR_TOPS = {}
+	for level = -below, above do
+		table.insert(FLOOR_TOPS, FLOOR_TOP + level * FLOOR_HEIGHT)
+	end
+	FLOORS = #FLOOR_TOPS
+	GROUND_INDEX = below + 1
+	-- Walls run from the deepest floor to the ceiling above the highest.
+	SHELL_BASE = FLOOR_TOPS[1]
+	SHELL_HEIGHT = FLOOR_HEIGHT * FLOORS
+	WALL_TOP = SHELL_BASE + SHELL_HEIGHT
+	ROOF_TOP = WALL_TOP + ROOF_T
 end
 
 local STAIR_W = Config.Base.StairWidth :: number
@@ -284,8 +311,10 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 	newPart(
 		model,
 		"Floor",
-		Vector3.new(FOOTPRINT.X, FLOOR_TOP, FOOTPRINT.Y),
-		baseCFrame * CFrame.new(0, FLOOR_TOP / 2, 0),
+		-- The lowest floor slab: thick enough to read as ground even when the
+		-- base has been dug down into basements.
+		Vector3.new(FOOTPRINT.X, 1, FOOTPRINT.Y),
+		baseCFrame * CFrame.new(0, SHELL_BASE - 0.5, 0),
 		Palette.BaseFloor,
 		Enum.Material.SmoothPlastic
 	)
@@ -294,8 +323,8 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 	newPart(
 		model,
 		"BackWall",
-		Vector3.new(FOOTPRINT.X, WALL_H, WALL_T),
-		baseCFrame * CFrame.new(0, FLOOR_TOP + WALL_H / 2, backZ),
+		Vector3.new(FOOTPRINT.X, SHELL_HEIGHT, WALL_T),
+		baseCFrame * CFrame.new(0, SHELL_BASE + SHELL_HEIGHT / 2, backZ),
 		Palette.BaseWall,
 		Enum.Material.SmoothPlastic
 	)
@@ -314,8 +343,8 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		newPart(
 			model,
 			label .. "Wall",
-			Vector3.new(WALL_T, WALL_H, SIDE_DEPTH),
-			baseCFrame * CFrame.new(wallX, FLOOR_TOP + WALL_H / 2, SIDE_Z),
+			Vector3.new(WALL_T, SHELL_HEIGHT, SIDE_DEPTH),
+			baseCFrame * CFrame.new(wallX, SHELL_BASE + SHELL_HEIGHT / 2, SIDE_Z),
 			Palette.BaseWall,
 			Enum.Material.SmoothPlastic
 		)
@@ -331,10 +360,10 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		newPart(
 			model,
 			label .. "Pillar",
-			Vector3.new(PILLAR_SIZE, WALL_H, PILLAR_SIZE),
+			Vector3.new(PILLAR_SIZE, SHELL_HEIGHT, PILLAR_SIZE),
 			baseCFrame * CFrame.new(
 				side * (HALF_WIDTH - PILLAR_SIZE / 2 + PILLAR_PROUD),
-				FLOOR_TOP + WALL_H / 2,
+				SHELL_BASE + SHELL_HEIGHT / 2,
 				-(HALF_DEPTH - PILLAR_SIZE / 2 + PILLAR_PROUD)
 			),
 			Palette.BaseTrim,
@@ -350,7 +379,7 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		Vector3.new(FOOTPRINT.X - WALL_T * 2, panelHeight, BACK_PANEL_THICKNESS),
 		baseCFrame * CFrame.new(
 			0,
-			FLOOR_TOP + panelHeight / 2,
+			SHELL_BASE + panelHeight / 2,
 			HALF_DEPTH - WALL_T - BACK_PANEL_THICKNESS / 2 - BACK_PANEL_GAP
 		),
 		Palette.BaseBack,
@@ -556,7 +585,7 @@ local function buildOwnerSign(model: Model, baseCFrame: CFrame, player: Player)
 		model,
 		"SignPost",
 		Vector3.new(0.9, SIGN_POST_HEIGHT, 0.9),
-		baseCFrame * CFrame.new(localX, FLOOR_TOP + SIGN_POST_HEIGHT / 2, localZ) * facing,
+		baseCFrame * CFrame.new(localX, FLOOR_TOPS[GROUND_INDEX] + SIGN_POST_HEIGHT / 2, localZ) * facing,
 		Palette.BaseRoof,
 		Enum.Material.SmoothPlastic
 	)
@@ -565,7 +594,7 @@ local function buildOwnerSign(model: Model, baseCFrame: CFrame, player: Player)
 		"OwnerSign",
 		SIGN_BOARD_SIZE,
 		baseCFrame
-			* CFrame.new(localX, FLOOR_TOP + SIGN_POST_HEIGHT + SIGN_BOARD_SIZE.Y / 2, localZ)
+			* CFrame.new(localX, FLOOR_TOPS[GROUND_INDEX] + SIGN_POST_HEIGHT + SIGN_BOARD_SIZE.Y / 2, localZ)
 			* facing,
 		Palette.SignBoard,
 		Enum.Material.SmoothPlastic
@@ -635,7 +664,8 @@ local function buildSpawnPoint(model: Model, baseCFrame: CFrame): BasePart
 		model,
 		"SpawnPoint",
 		Vector3.new(2, SPAWN_MARKER_HEIGHT, 2),
-		baseCFrame * CFrame.new(0, FLOOR_TOP + SPAWN_MARKER_HEIGHT / 2, -(HALF_DEPTH - SPAWN_INSET)),
+		-- Always the GROUND floor: players arrive at street level.
+		baseCFrame * CFrame.new(0, FLOOR_TOPS[GROUND_INDEX] + SPAWN_MARKER_HEIGHT / 2, -(HALF_DEPTH - SPAWN_INSET)),
 		Palette.BaseFloor,
 		Enum.Material.SmoothPlastic
 	)
@@ -660,7 +690,7 @@ local function buildVacantSign(model: Model, baseCFrame: CFrame)
 		Vector3.new(0.6, SIGN_POST_HEIGHT, 0.6),
 		baseCFrame * CFrame.new(
 			-(HALF_WIDTH - SIGN_INSET_X),
-			FLOOR_TOP + SIGN_POST_HEIGHT / 2,
+			FLOOR_TOPS[GROUND_INDEX] + SIGN_POST_HEIGHT / 2,
 			-(HALF_DEPTH - SIGN_INSET_Z)
 		),
 		Palette.SignBoard,
@@ -675,7 +705,7 @@ local function buildVacantSign(model: Model, baseCFrame: CFrame)
 		baseCFrame
 			* CFrame.new(
 				-(HALF_WIDTH - SIGN_INSET_X),
-				FLOOR_TOP + SIGN_POST_HEIGHT + SIGN_BOARD_SIZE.Y / 2,
+				FLOOR_TOPS[GROUND_INDEX] + SIGN_POST_HEIGHT + SIGN_BOARD_SIZE.Y / 2,
 				-(HALF_DEPTH - SIGN_INSET_Z)
 			)
 			* CFrame.Angles(0, SIGN_ANGLE, 0),
@@ -715,8 +745,11 @@ end
 -- Builds a base. Pass a Player for a claimed plot, or nil for an unclaimed one:
 -- a vacant plot gets the same building (so the street line never has a gap) but
 -- no owner avatar, no floating house marker and a "PLOT AVAILABLE" sign.
-function BaseBuilder.Build(player: Player?, model: Model, baseCFrame: CFrame): BaseShell
+-- `floors` says how many storeys sit above and below the ground floor; nil
+-- means a plain ground-floor base. Floors are bought, so this is per base.
+function BaseBuilder.Build(player: Player?, model: Model, baseCFrame: CFrame, floors: { above: number, below: number }?): BaseShell
 	local who = player and player.Name or "vacant plot"
+	computeFloorTops(floors and floors.above or 0, floors and floors.below or 0)
 	buildShell(model, baseCFrame)
 	local spawnPoint = buildSpawnPoint(model, baseCFrame)
 
@@ -747,8 +780,9 @@ function BaseBuilder.Build(player: Player?, model: Model, baseCFrame: CFrame): B
 
 	return {
 		spawnPoint = spawnPoint,
-		floorTop = FLOOR_TOP,
+		floorTop = FLOOR_TOPS[GROUND_INDEX],
 		floorTops = table.clone(FLOOR_TOPS),
+		groundIndex = GROUND_INDEX,
 	}
 end
 
