@@ -361,7 +361,7 @@ end
 -- ---------------------------------------------------------------- depositing --
 
 local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
-	local model = SquishyFactory.create(def.name)
+	local model = SquishyFactory.create(def.name, def.variant)
 	local prompt = model:FindFirstChild("PickupPrompt", true)
 	if prompt ~= nil then
 		prompt:Destroy()

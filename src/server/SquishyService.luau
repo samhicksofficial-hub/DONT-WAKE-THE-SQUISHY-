@@ -24,7 +24,7 @@ local SquishyService = {}
 local upgradeService: any = nil
 local discoveryService: any = nil
 
-type CarryEntry = { model: Model, def: any }
+type CarryEntry = { model: Model, def: any, variant: string }
 type PlayerConns = { characterAdded: RBXScriptConnection?, died: RBXScriptConnection? }
 
 local rng = Random.new()
@@ -199,8 +199,13 @@ local function onPickup(player: Player, model: Model)
 
 	model.Parent = character
 
-	carrying[player] = { model = model, def = def }
-	player:SetAttribute("Carrying", def.name)
+	local variantName = model:GetAttribute("Variant")
+	carrying[player] = {
+		model = model,
+		def = def,
+		variant = typeof(variantName) == "string" and variantName or "Normal",
+	}
+	player:SetAttribute("Carrying", model:GetAttribute("DisplayName") or def.name)
 	-- EnemyService scales its notice radius by this: rarer cargo gives you away
 	-- from much further off.
 	player:SetAttribute("CarryRarity", def.rarity)
@@ -243,8 +248,11 @@ local function trySpawn()
 		return
 	end
 	local def = candidates[rng:NextInteger(1, #candidates)] :: any
+	-- Variant is rolled independently of which squishy came up, so any squishy
+	-- can turn up Gold or Rainbow.
+	local variant = Util.weightedRandom(Config.Variants, rng) :: any
 
-	local model = SquishyFactory.create(def.name)
+	local model = SquishyFactory.create(def.name, variant.name)
 	local point = spawns[spawnIndex]
 	local height = SquishyFactory.bodyHeight(def)
 	local yaw = rng:NextNumber(0, math.pi * 2)
@@ -282,7 +290,11 @@ function SquishyService.TakeCarriedDef(player: Player): any
 		entry.model:Destroy()
 	end)
 	restorePlayer(player)
-	return entry.def
+	-- The variant rides along on the def copy so the placed squishy keeps its
+	-- Gold/Rainbow coat (and its income multiplier) after deposit.
+	local carried = table.clone(entry.def)
+	carried.variant = entry.variant
+	return carried
 end
 
 -- Detaches the carried squishy and puts it back on the ground where the

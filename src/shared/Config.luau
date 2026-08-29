@@ -99,6 +99,25 @@ for _, def in Config.Squishies do
 	Config.SquishyByName[def.name] = def
 end
 
+-- ---------------------------------------------------------------- variants --
+-- A variant is the SAME squishy wearing a rarer coat: it keeps the shape and
+-- the rarity, multiplies the income, and gets an unmistakable effect. Rolled
+-- independently of which squishy you get, so any squishy can turn up golden.
+--   effect: how SquishyModels dresses it — "none" | "gold" | "rainbow"
+--   weight: roll chance against every other variant
+--   income: income multiplier
+Config.Variants = {
+	{ name = "Normal",  effect = "none",    weight = 880, income = 1,  prefix = "" },
+	{ name = "Gold",    effect = "gold",    weight = 100, income = 5,  prefix = "Gold ",
+		color = Color3.fromRGB(255, 206, 74) },
+	{ name = "Rainbow", effect = "rainbow", weight = 20,  income = 25, prefix = "Rainbow " },
+}
+
+Config.VariantByName = {} :: { [string]: any }
+for _, variant in Config.Variants do
+	Config.VariantByName[variant.name] = variant
+end
+
 -- The two giant patrolling enemies: monstrous versions of real squishies.
 -- `shape` + `color` (as tint) feed SquishyModels.build; `scale` is huge.
 Config.Enemies = {

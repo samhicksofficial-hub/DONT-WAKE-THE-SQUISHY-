@@ -41,6 +41,10 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- Config carries the variant table (Gold, Rainbow). It requires nothing, so
+-- there is no cycle.
+local Config = require(script.Parent:WaitForChild("Config"))
+
 local SquishyModels = {}
 
 export type BuildSpec = {
@@ -48,6 +52,8 @@ export type BuildSpec = {
 	color: Color3,
 	sparkle: boolean?,
 	scale: number?,
+	-- Variant name from Config.Variants ("Gold", "Rainbow"); nil = Normal.
+	variant: string?,
 	-- Tint the mesh even when its shape isn't a tinting one. The giant enemies
 	-- use this so they never wear a collectable's stock texture.
 	forceTint: boolean?,
@@ -765,6 +771,81 @@ end
 
 -- ---------- the one public door ----------
 
+-- ---------------------------------------------------------------- variants --
+-- A variant repaints a finished rig. Gold goes metallic yellow; Rainbow cycles
+-- every visible part's hue together from one shared loop, so a shelf of them
+-- pulses in step rather than each running its own timer.
+
+local rainbowParts: { BasePart } = {}
+local rainbowLoopStarted = false
+
+local function startRainbowLoop()
+	if rainbowLoopStarted then
+		return
+	end
+	rainbowLoopStarted = true
+	task.spawn(function()
+		while true do
+			task.wait(1 / 20)
+			local hue = (os.clock() * 0.25) % 1
+			local color = Color3.fromHSV(hue, 0.85, 1)
+			-- Backwards so removals never skip an entry.
+			for i = #rainbowParts, 1, -1 do
+				local part = rainbowParts[i]
+				if part.Parent == nil then
+					table.remove(rainbowParts, i)
+				else
+					part.Color = color
+				end
+			end
+		end
+	end)
+end
+
+-- Applies a variant's look to an already-built model. Unknown or "none"
+-- variants leave it exactly as it was.
+local function applyVariant(model: Model, variantName: string?)
+	if variantName == nil or variantName == "Normal" then
+		return
+	end
+	local variant = (Config :: any).VariantByName[variantName]
+	if variant == nil or variant.effect == "none" then
+		return
+	end
+
+	local visuals: { BasePart } = {}
+	for _, descendant in model:GetDescendants() do
+		-- The Body is the invisible bounding box; only repaint what is seen.
+		if descendant:IsA("BasePart") and descendant.Name ~= "Body" and descendant.Transparency < 1 then
+			table.insert(visuals, descendant)
+		end
+	end
+
+	if variant.effect == "gold" then
+		for _, part in visuals do
+			part.Color = variant.color or Color3.fromRGB(255, 206, 74)
+			part.Material = Enum.Material.Metal
+			part.Reflectance = 0.35
+			-- A gold coat replaces any baked texture's colour, so drop the
+			-- surface appearance that would otherwise fight it.
+			local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
+			if appearance then
+				appearance:Destroy()
+			end
+		end
+	elseif variant.effect == "rainbow" then
+		for _, part in visuals do
+			part.Material = Enum.Material.Neon
+			local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
+			if appearance then
+				appearance:Destroy()
+			end
+			table.insert(rainbowParts, part)
+		end
+		startRainbowLoop()
+	end
+end
+
 function SquishyModels.build(spec: BuildSpec): (Model, number)
 	local rig: Rig = { pieces = {} }
 	local color = spec.color
@@ -803,7 +884,9 @@ function SquishyModels.build(spec: BuildSpec): (Model, number)
 		attachFace(primaryPart, sparkle, footprint)
 	end
 
-	return finalize(rig, footprint)
+	local model, height = finalize(rig, footprint)
+	applyVariant(model, spec.variant)
+	return model, height
 end
 
 return SquishyModels

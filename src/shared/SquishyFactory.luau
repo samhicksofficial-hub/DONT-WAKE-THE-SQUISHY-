@@ -50,19 +50,24 @@ end
 -- Creates a ready-to-place squishy. The caller parents it and pivots it so the
 -- body's base sits on the ground (`model:PivotTo(CFrame.new(pos + Vector3.new(0, height/2, 0)))`
 -- with `height = SquishyFactory.bodyHeight(def)`).
-function SquishyFactory.create(squishyName: string): Model
+-- `variantName` is a Config.Variants entry ("Gold", "Rainbow"); nil = Normal.
+function SquishyFactory.create(squishyName: string, variantName: string?): Model
 	local def = Config.SquishyByName[squishyName]
 	assert(def ~= nil, ("Unknown squishy '%s'"):format(squishyName))
 	local rarity = Config.RarityByName[def.rarity]
 	assert(rarity ~= nil, ("Unknown rarity '%s'"):format(def.rarity))
+	local variant = variantName ~= nil and Config.VariantByName[variantName] or nil
 
 	local model, height = SquishyModels.build({
 		shape = def.shape,
 		color = def.color,
 		sparkle = def.sparkle,
 		scale = def.scale,
+		variant = variantName,
 	})
-	model.Name = def.name
+	-- The display name wears the variant: "Rainbow Opal Dumpling".
+	local displayName = ((variant and variant.prefix) or "") .. def.name
+	model.Name = displayName
 	measuredHeights[def.name] = height
 
 	local body = model.PrimaryPart :: BasePart
@@ -80,9 +85,15 @@ function SquishyFactory.create(squishyName: string): Model
 	layout.FillDirection = Enum.FillDirection.Vertical
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Parent = info
-	makeLabel(info, def.name, Color3.new(1, 1, 1), 26, 1)
-	makeLabel(info, def.rarity, rarity.color, 18, 2)
-	makeLabel(info, Util.formatMoney(rarity.income) .. "/s", Color3.fromRGB(85, 255, 85), 18, 3)
+	local incomeMult = (variant and variant.income) or 1
+	local income = rarity.income * incomeMult
+	makeLabel(info, displayName, (variant and variant.color) or Color3.new(1, 1, 1), 26, 1)
+	-- A variant reads as its own line so a Rainbow is obvious at a glance.
+	local rarityText = if variant ~= nil and variant.name ~= "Normal"
+		then ("%s  %s"):format(variant.name:upper(), def.rarity)
+		else def.rarity
+	makeLabel(info, rarityText, rarity.color, 18, 2)
+	makeLabel(info, Util.formatMoney(income) .. "/s", Color3.fromRGB(85, 255, 85), 18, 3)
 
 	-- Zzz billboard, shown while sleeping.
 	local zzz = Instance.new("BillboardGui")
@@ -99,7 +110,7 @@ function SquishyFactory.create(squishyName: string): Model
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "PickupPrompt"
 	prompt.ActionText = "Pick Up"
-	prompt.ObjectText = def.name
+	prompt.ObjectText = displayName
 	prompt.HoldDuration = 0.35
 	prompt.MaxActivationDistance = 9
 	prompt.RequiresLineOfSight = false
@@ -107,8 +118,10 @@ function SquishyFactory.create(squishyName: string): Model
 	prompt.Parent = body
 
 	model:SetAttribute("SquishyName", def.name)
+	model:SetAttribute("DisplayName", displayName)
+	model:SetAttribute("Variant", (variant and variant.name) or "Normal")
 	model:SetAttribute("Rarity", def.rarity)
-	model:SetAttribute("Income", rarity.income)
+	model:SetAttribute("Income", income)
 	model:SetAttribute("SpeedMult", rarity.speedMult)
 	model:SetAttribute("Scale", def.scale or 1)
 	model:SetAttribute("BodyHeight", height)
