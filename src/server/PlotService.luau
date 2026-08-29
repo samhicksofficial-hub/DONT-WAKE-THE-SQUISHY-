@@ -66,6 +66,13 @@ type SlotRecord = {
 	unlocked: boolean,
 	occupied: boolean,
 	income: number,
+	baseIncome: number,     -- level-1 income, variant multiplier included
+	level: number,
+	rarity: string,
+	squishy: Model?,
+	upgradePad: BasePart?,
+	upgradeLabel: TextLabel?,
+	lastUpgradeTouch: number,
 	pending: number,
 	lastTouch: number,
 	platform: BasePart,
@@ -360,6 +367,95 @@ end
 
 -- ---------------------------------------------------------------- depositing --
 
+-- ------------------------------------------------------------- levelling --
+
+-- Refreshes the squishy's own billboard and the upgrade pad's price line to
+-- match its current level.
+local function refreshSlotLevel(slot: SlotRecord)
+	slot.income = Config.incomeAtLevel(slot.baseIncome, slot.rarity, slot.level)
+
+	local model = slot.squishy
+	if model ~= nil and model.Parent ~= nil then
+		model:SetAttribute("Level", slot.level)
+		model:SetAttribute("Income", slot.income)
+		-- The factory's Info billboard: line 2 carries the level, line 3 the rate.
+		local info = model:FindFirstChild("Info", true)
+		if info ~= nil then
+			local levelLabel = info:FindFirstChild("Label2")
+			if levelLabel ~= nil and levelLabel:IsA("TextLabel") then
+				levelLabel.Text = ("%s  Lvl %d"):format(slot.rarity, slot.level)
+			end
+			local rateLabel = info:FindFirstChild("Label3")
+			if rateLabel ~= nil and rateLabel:IsA("TextLabel") then
+				rateLabel.Text = Util.formatMoney(slot.income) .. "/s"
+			end
+		end
+	end
+
+	local label = slot.upgradeLabel
+	if label ~= nil then
+		local cost = Config.levelUpCost(slot.baseIncome, slot.rarity, slot.level)
+		if cost == nil then
+			label.Text = "MAX LEVEL"
+		else
+			label.Text = ("%s\nLvl %d > %d"):format(Util.formatMoney(cost), slot.level, slot.level + 1)
+		end
+	end
+end
+
+local function onUpgradeTouched(plot: PlotRecord, slot: SlotRecord, hitPart: BasePart)
+	if not slot.occupied or not isOwnerTouch(plot, hitPart) then
+		return
+	end
+	local now = os.clock()
+	if now - slot.lastUpgradeTouch < TOUCH_DEBOUNCE then
+		return
+	end
+	slot.lastUpgradeTouch = now
+
+	local cost = Config.levelUpCost(slot.baseIncome, slot.rarity, slot.level)
+	if cost == nil then
+		return -- maxed
+	end
+	local economy = servicesRef.EconomyService
+	if not economy.TrySpend(plot.player, cost) then
+		return -- can't afford it; the pad just does nothing
+	end
+	slot.level += 1
+	refreshSlotLevel(slot)
+end
+
+-- The yellow "upgrade" step in front of an occupied slot. Built once per slot
+-- and then only shown/hidden, so a redeposit never stacks pads.
+local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
+	local pad = slot.upgradePad
+	if pad == nil then
+		pad = newPart(
+			plot.model,
+			"UpgradePad" .. tostring(slot.index),
+			Vector3.new(PAD_DIAMETER * 1.15, PAD_THICKNESS, 2.2),
+			plot.baseCFrame
+				* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD * 0.45),
+			Palette.UnlockPad,
+			Enum.Material.Neon
+		)
+		pad.CanCollide = false
+		local gui = newBillboard(pad, "UpgradeGui", 6, 2.6, 2.4, 70)
+		slot.upgradeLabel = newLabel(gui, "", COLOR_WHITE, 1, 1)
+		slot.upgradePad = pad
+		table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
+			onUpgradeTouched(plot, slot, hitPart)
+		end))
+	end
+	pad.Transparency = 0
+	pad.CanTouch = true
+	local gui = pad:FindFirstChild("UpgradeGui")
+	if gui ~= nil and gui:IsA("BillboardGui") then
+		gui.Enabled = true
+	end
+	refreshSlotLevel(slot)
+end
+
 local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	local model = SquishyFactory.create(def.name, def.variant)
 	local prompt = model:FindFirstChild("PickupPrompt", true)
@@ -376,8 +472,15 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	model:PivotTo(slot.platform.CFrame * CFrame.new(0, slot.platform.Size.Y / 2 + height / 2, 0))
 	slot.occupied = true
 	slot.pending = 0
-	slot.income = (model:GetAttribute("Income") :: number?) or 0
+	slot.level = 1
+	slot.rarity = (model:GetAttribute("Rarity") :: string?) or "Common"
+	-- Level 1 income is what the factory stamped (variant multiplier included);
+	-- every level after that is derived from it.
+	slot.baseIncome = (model:GetAttribute("Income") :: number?) or 0
+	slot.income = slot.baseIncome
+	slot.squishy = model
 	updateCollectLabel(plot, slot)
+	showUpgradePad(plot, slot)
 end
 
 local function flashDepositPad(plot: PlotRecord)
@@ -617,6 +720,13 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			unlocked = unlocked,
 			occupied = false,
 			income = 0,
+			baseIncome = 0,
+			level = 1,
+			rarity = "Common",
+			squishy = nil,
+			upgradePad = nil,
+			upgradeLabel = nil,
+			lastUpgradeTouch = 0,
 			pending = 0,
 			lastTouch = 0,
 			platform = platform,

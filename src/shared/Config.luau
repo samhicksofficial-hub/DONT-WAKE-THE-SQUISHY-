@@ -246,6 +246,41 @@ Config.Upgrades = {
 	},
 }
 
+-- ------------------------------------------------------- squishy levelling --
+-- A placed squishy earns more the more you feed it. Income at level L is
+-- `base * growth^(L-1)`, and the cost of the NEXT level is
+-- `base * PriceFactor * growth^L` — so a rarer squishy both starts higher and
+-- climbs faster, but costs proportionally more to push.
+Config.Levels = {
+	MaxLevel = 50,
+	PriceFactor = 45,
+	-- Per-rarity income growth per level. Better rarities scale harder.
+	Growth = {
+		Common = 1.14,
+		Uncommon = 1.17,
+		Rare = 1.21,
+		Epic = 1.26,
+		Legendary = 1.32,
+		Mythical = 1.40,
+	},
+	DefaultGrowth = 1.15,
+}
+
+-- Income of a squishy of `rarityName` at `level`, from a level-1 `baseIncome`.
+function Config.incomeAtLevel(baseIncome: number, rarityName: string, level: number): number
+	local growth = (Config.Levels.Growth :: any)[rarityName] or Config.Levels.DefaultGrowth
+	return baseIncome * growth ^ (math.max(1, level) - 1)
+end
+
+-- Cash to go from `level` to `level + 1`. Returns nil at max level.
+function Config.levelUpCost(baseIncome: number, rarityName: string, level: number): number?
+	if level >= Config.Levels.MaxLevel then
+		return nil
+	end
+	local growth = (Config.Levels.Growth :: any)[rarityName] or Config.Levels.DefaultGrowth
+	return math.max(1, math.floor(baseIncome * Config.Levels.PriceFactor * growth ^ level))
+end
+
 Config.Rebirth = {
 	-- Cash needed for rebirth N (1-indexed: [1] is the first rebirth).
 	Costs = { 50000, 500000, 5000000, 50000000, 500000000 },
