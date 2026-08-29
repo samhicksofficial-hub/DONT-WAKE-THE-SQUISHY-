@@ -221,9 +221,12 @@ local function onPickup(player: Player, model: Model)
 end
 
 -- One spawn attempt: respects the fresh cap and spawn point occupancy.
-local function trySpawn()
-	if freshCount >= Config.Field.MaxSquishies then
-		return
+-- Spawns one field squishy. `forcedRarity` skips the weighted roll (the timed
+-- guaranteed-rarity events use it) and `ignoreCap` lets an event land even when
+-- the field is already full.
+local function trySpawn(forcedRarity: string?, ignoreCap: boolean?)
+	if not ignoreCap and freshCount >= Config.Field.MaxSquishies then
+		return nil
 	end
 	local spawns = mapRef.squishySpawns :: { Vector3 }
 	local freeIndices = {}
@@ -233,11 +236,16 @@ local function trySpawn()
 		end
 	end
 	if #freeIndices == 0 then
-		return
+		return nil
 	end
 	local spawnIndex = freeIndices[rng:NextInteger(1, #freeIndices)]
 
-	local rarity = Util.weightedRandom(Config.Rarities, rng) :: any
+	local rarity = if forcedRarity ~= nil
+		then Config.RarityByName[forcedRarity]
+		else Util.weightedRandom(Config.Rarities, rng) :: any
+	if rarity == nil then
+		return nil
+	end
 	local candidates = {}
 	for _, catalogDef in Config.Squishies do
 		if catalogDef.rarity == rarity.name then
@@ -245,7 +253,7 @@ local function trySpawn()
 		end
 	end
 	if #candidates == 0 then
-		return
+		return nil
 	end
 	local def = candidates[rng:NextInteger(1, #candidates)] :: any
 	-- Variant is rolled independently of which squishy came up, so any squishy
@@ -277,6 +285,18 @@ local function trySpawn()
 	end
 
 	model.Parent = mapRef.squishyFolder
+	return model
+end
+
+-- Forces one squishy of `rarityName` into the field, ignoring the spawn cap.
+-- EventService calls this when a guaranteed-rarity countdown lands.
+function SquishyService.SpawnRarity(rarityName: string): Model?
+	local ok, model = pcall(trySpawn, rarityName, true)
+	if not ok then
+		warn(("[SquishyService] forced %s spawn failed: %s"):format(rarityName, tostring(model)))
+		return nil
+	end
+	return model
 end
 
 -- Consumes the carried squishy (deposit). Returns the catalog def, or nil.

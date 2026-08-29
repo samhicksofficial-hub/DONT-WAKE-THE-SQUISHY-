@@ -281,6 +281,21 @@ function Config.levelUpCost(baseIncome: number, rarityName: string, level: numbe
 	return math.max(1, math.floor(baseIncome * Config.Levels.PriceFactor * growth ^ level))
 end
 
+-- ---------------------------------------------------------------- events --
+-- Guaranteed high-tier spawns on a timer, advertised on a big board in the
+-- arena so everyone can see the clock and be waiting when it lands.
+Config.Events = {
+	{ name = "Legendary", rarity = "Legendary", interval = 300, color = Color3.fromRGB(240, 165, 60) },
+	{ name = "Mythic",    rarity = "Mythical",  interval = 900, color = Color3.fromRGB(240, 95, 150) },
+}
+
+-- Where the countdown board stands and how big it is.
+Config.EventBoard = {
+	Height = 26,       -- board centre above the ground
+	Size = Vector2.new(56, 18),
+	Offset = Vector3.new(0, 0, -0.62), -- fraction of the field, toward the north edge
+}
+
 Config.Rebirth = {
 	-- Cash needed for rebirth N (1-indexed: [1] is the first rebirth).
 	Costs = { 50000, 500000, 5000000, 50000000, 500000000 },
