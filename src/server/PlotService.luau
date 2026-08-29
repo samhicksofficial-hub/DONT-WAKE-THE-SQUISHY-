@@ -58,16 +58,19 @@ local PLAQUE_ARROW_BG = Color3.fromRGB(246, 158, 26)
 local PLAQUE_ARROW = Color3.new(1, 1, 1)
 -- How high above the collect pad the plaque floats.
 -- Clear of the money label sitting on the pad below it.
-local UPGRADE_PLAQUE_LIFT = 5.6
+local UPGRADE_PLAQUE_LIFT = 5
 -- Roughly one pad wide, so neighbouring plaques never overlap.
-local UPGRADE_PLAQUE_SIZE = Vector2.new(5, 3.1)
+local UPGRADE_PLAQUE_SIZE = Vector2.new(4.6, 2.4)
 
 local COLOR_MONEY = Color3.fromRGB(85, 255, 85)
 local COLOR_REFUSE = Color3.fromRGB(255, 70, 70)
 local COLOR_WHITE = Color3.new(1, 1, 1)
 
--- Cylinder parts extend along their X axis; this stands them upright.
-local PAD_UPRIGHT = CFrame.Angles(0, 0, math.rad(90))
+-- Cylinder parts extend along their X axis; this stands one upright. The extra
+-- spin about that (now vertical) axis turns the flat top so a SurfaceGui
+-- printed on it reads left-to-right from the front of the plot instead of
+-- sideways.
+local PAD_UPRIGHT = CFrame.Angles(0, 0, math.rad(90)) * CFrame.Angles(math.rad(90), 0, 0)
 
 type SlotRecord = {
 	index: number,
@@ -261,13 +264,15 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	local cf = plot.baseCFrame
 		* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
 		* PAD_UPRIGHT
+	-- Matte, not Neon: a neon pad blows out to white and loses the green
+	-- entirely, which is what made these read as pale discs.
 	local pad = newPart(
 		plot.model,
 		"CollectPad" .. tostring(slot.index),
 		Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER),
 		cf,
 		Palette.CollectPad,
-		Enum.Material.Neon
+		Enum.Material.SmoothPlastic
 	)
 	pad.Shape = Enum.PartType.Cylinder
 	pad.CanCollide = false
@@ -287,9 +292,33 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	rim.CanCollide = false
 	rim.CanTouch = false
 	rim.CanQuery = false
-	local gui = newBillboard(pad, "PendingGui", 4.5, 1.8, 2.2, 90)
+	-- The amount is PRINTED ON the pad, not floating over it: an upright
+	-- cylinder's flat top is its +X face, so Right is the face pointing up.
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "PendingGui"
+	gui.Face = Enum.NormalId.Right
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 64
+	gui.LightInfluence = 0
+	gui.Adornee = pad
+	gui.Parent = pad
+
+	local amount = Instance.new("TextLabel")
+	amount.Name = "Amount"
+	amount.BackgroundTransparency = 1
+	amount.AnchorPoint = Vector2.new(0.5, 0.5)
+	amount.Position = UDim2.fromScale(0.5, 0.5)
+	amount.Size = UDim2.fromScale(0.86, 0.42)
+	amount.Font = Enum.Font.FredokaOne
+	amount.Text = "$0"
+	amount.TextScaled = true
+	amount.TextColor3 = COLOR_WHITE
+	amount.TextStrokeTransparency = 0
+	amount.TextStrokeColor3 = Color3.new(0, 0, 0)
+	amount.Parent = gui
+
 	slot.collectPad = pad
-	slot.collectLabel = newLabel(gui, "$0", COLOR_MONEY, 1, 1)
+	slot.collectLabel = amount
 	updateCollectLabel(plot, slot)
 	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
 		onCollectTouched(plot, slot, hitPart)
@@ -392,12 +421,25 @@ end
 -- The yellow upgrade plaque: a rounded card with a fat black outline, an arrow
 -- badge on the left and two stacked lines on the right — the big price and the
 -- small "Lvl 4 > Lvl 5" step. Returns both labels so the caller can retext them.
-local function buildUpgradePlaque(gui: BillboardGui): (TextLabel, TextLabel)
+local function buildUpgradePlaque(board: BasePart): (TextLabel, TextLabel)
+	-- Painted on the board itself, on both faces so it reads from either side.
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "UpgradeGui"
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 64
+	gui.LightInfluence = 0
+	gui.Adornee = board
+	gui.Parent = board
 	local card = Instance.new("Frame")
 	card.Name = "Card"
 	card.Size = UDim2.fromScale(1, 1)
 	card.BackgroundColor3 = PLAQUE_YELLOW
 	card.BorderSizePixel = 0
+	-- Explicit ZIndex everywhere: a BillboardGui defaults to Global behaviour,
+	-- where same-ZIndex siblings can paint over each other unpredictably — which
+	-- is what was swallowing the level line.
+	card.ZIndex = 1
 	card.Parent = gui
 
 	local corner = Instance.new("UICorner")
@@ -418,6 +460,7 @@ local function buildUpgradePlaque(gui: BillboardGui): (TextLabel, TextLabel)
 	badge.Size = UDim2.fromScale(0.21, 0.76)
 	badge.BackgroundColor3 = PLAQUE_ARROW_BG
 	badge.BorderSizePixel = 0
+	badge.ZIndex = 2
 	badge.Parent = card
 	local badgeCorner = Instance.new("UICorner")
 	badgeCorner.CornerRadius = UDim.new(0.25, 0)
@@ -433,6 +476,7 @@ local function buildUpgradePlaque(gui: BillboardGui): (TextLabel, TextLabel)
 	arrow.TextColor3 = PLAQUE_ARROW
 	arrow.TextStrokeTransparency = 0.2
 	arrow.TextStrokeColor3 = Color3.new(0, 0, 0)
+	arrow.ZIndex = 3
 	arrow.Parent = badge
 
 	local price = Instance.new("TextLabel")
@@ -447,6 +491,7 @@ local function buildUpgradePlaque(gui: BillboardGui): (TextLabel, TextLabel)
 	price.TextColor3 = COLOR_WHITE
 	price.TextStrokeTransparency = 0
 	price.TextStrokeColor3 = Color3.new(0, 0, 0)
+	price.ZIndex = 3
 	price.Parent = card
 
 	local step = Instance.new("TextLabel")
@@ -462,6 +507,7 @@ local function buildUpgradePlaque(gui: BillboardGui): (TextLabel, TextLabel)
 	step.TextColor3 = COLOR_WHITE
 	step.TextStrokeTransparency = 0
 	step.TextStrokeColor3 = Color3.new(0, 0, 0)
+	step.ZIndex = 3
 	step.Parent = card
 
 	return price, step
@@ -536,29 +582,21 @@ end
 local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 	local pad = slot.upgradePad
 	if pad == nil then
+		-- The plaque is a real board standing just above the collect pad, not a
+		-- BillboardGui: a billboard here kept losing its depth fight with the
+		-- slot platform behind it, and printing on a surface is what already
+		-- works for the money on the pad below.
 		pad = newPart(
 			plot.model,
 			"UpgradePad" .. tostring(slot.index),
-			Vector3.new(PAD_DIAMETER * 1.15, PAD_THICKNESS, 2.2),
+			Vector3.new(UPGRADE_PLAQUE_SIZE.X, UPGRADE_PLAQUE_SIZE.Y, 0.35),
 			plot.baseCFrame
-				* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD * 0.45),
-			Palette.UnlockPad,
-			Enum.Material.Neon
+				* CFrame.new(slot.localX, slot.floorTop + UPGRADE_PLAQUE_LIFT, slot.localZ - PAD_FORWARD),
+			PLAQUE_YELLOW,
+			Enum.Material.SmoothPlastic
 		)
 		pad.CanCollide = false
-		-- The plaque floats above the collect pad rather than over the upgrade
-		-- slab itself: that is where the reference puts it, and it keeps the
-		-- price clear of the money label sitting on the green pad below.
-		local anchor = slot.collectPad or pad
-		local gui = newBillboard(
-			anchor,
-			"UpgradeGui",
-			UPGRADE_PLAQUE_SIZE.X,
-			UPGRADE_PLAQUE_SIZE.Y,
-			UPGRADE_PLAQUE_LIFT,
-			95
-		)
-		local price, step = buildUpgradePlaque(gui)
+		local price, step = buildUpgradePlaque(pad)
 		slot.upgradeLabel = price
 		slot.upgradeStepLabel = step
 		slot.upgradePad = pad
@@ -568,10 +606,8 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 	end
 	pad.Transparency = 0
 	pad.CanTouch = true
-	-- The plaque hangs off the collect pad, not the upgrade slab.
-	local anchor = slot.collectPad or pad
-	local gui = anchor:FindFirstChild("UpgradeGui")
-	if gui ~= nil and gui:IsA("BillboardGui") then
+	local gui = pad:FindFirstChild("UpgradeGui")
+	if gui ~= nil and gui:IsA("SurfaceGui") then
 		gui.Enabled = true
 	end
 	refreshSlotLevel(slot)
@@ -1326,7 +1362,7 @@ function PlotService.StealSquishy(model: Model, thief: Player): boolean
 		pad.Transparency = 1
 		pad.CanTouch = false
 		local gui = pad:FindFirstChild("UpgradeGui")
-		if gui ~= nil and gui:IsA("BillboardGui") then
+		if gui ~= nil and gui:IsA("SurfaceGui") then
 			gui.Enabled = false
 		end
 	end
