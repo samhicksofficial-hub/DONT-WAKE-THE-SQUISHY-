@@ -23,8 +23,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Util"))
-local SquishyModels = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("SquishyModels")) :: any
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Util = require(Shared:WaitForChild("Util"))
+local SquishyModels = require(Shared:WaitForChild("SquishyModels")) :: any
 
 local EnemyService = {}
 
@@ -214,6 +216,14 @@ local function findTarget(enemy: any, map: any, squishyService: any): Player?
 			local radius = enemy.cfg.noticeRadius
 			if squishyService.IsCarrying(player) then
 				radius = enemy.cfg.noticeRadiusCarrying
+				-- What you are carrying decides how far it gives you away: a
+				-- Common barely registers, a Mythical wakes the whole field.
+				local rarityName = player:GetAttribute("CarryRarity")
+				local rarity = typeof(rarityName) == "string" and Config.RarityByName[rarityName] or nil
+				local alertMult = rarity ~= nil and tonumber(rarity.alertMult) or nil
+				if alertMult ~= nil and alertMult > 0 then
+					radius *= alertMult
+				end
 			end
 			-- The player's Stealth upgrade shrinks how far this giant notices.
 			if upgradeService ~= nil then

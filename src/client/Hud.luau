@@ -60,6 +60,29 @@ function Hud.Start()
 	-- puts a UIListLayout inside Labels, and scaling a laid-out child would
 	-- shove the income line around on every payout.
 	local labelsFrame = moneyLabel.Parent :: any
+
+	-- The pack parks the money in the bottom-left corner. Move it to the top
+	-- centre, big — where the genre puts it, and where a phone player can
+	-- actually read it without it fighting the left-hand button column.
+	labelsFrame.AnchorPoint = Vector2.new(0.5, 0)
+	labelsFrame.Position = UDim2.fromScale(0.5, 0.018)
+	labelsFrame.Size = UDim2.fromScale(0.3, 0.115)
+	labelsFrame.ZIndex = 20
+	local layout = labelsFrame:FindFirstChildOfClass("UIListLayout")
+	if layout then
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layout.VerticalAlignment = Enum.VerticalAlignment.Top
+	end
+	-- Keep it legible on very wide screens without letting it swell on phones.
+	local ratio = labelsFrame:FindFirstChildOfClass("UIAspectRatioConstraint")
+	if ratio == nil then
+		local created = Instance.new("UIAspectRatioConstraint")
+		created.AspectRatio = 3.4
+		created.DominantAxis = Enum.DominantAxis.Height
+		created.Parent = labelsFrame
+	end
+	moneyLabel.ZIndex = 21
+	incomeLabel.ZIndex = 21
 	local existingScale = labelsFrame:FindFirstChildOfClass("UIScale")
 	if existingScale == nil then
 		local created = Instance.new("UIScale")

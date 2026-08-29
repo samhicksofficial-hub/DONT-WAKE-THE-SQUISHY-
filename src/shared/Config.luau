@@ -18,12 +18,14 @@ Config.Player = {
 -- (clicker odds: out of 1000). `income` is $ per second for a placed squishy.
 -- `speedMult` multiplies WalkSpeed while carrying.
 Config.Rarities = {
-	{ name = "Common",    color = Color3.fromRGB(148, 155, 164), income = 1,     speedMult = 0.92, weight = 550 },
-	{ name = "Uncommon",  color = Color3.fromRGB(96, 190, 120),  income = 8,     speedMult = 0.80, weight = 250 },
-	{ name = "Rare",      color = Color3.fromRGB(88, 148, 235),  income = 40,    speedMult = 0.66, weight = 120 },
-	{ name = "Epic",      color = Color3.fromRGB(168, 110, 235), income = 250,   speedMult = 0.50, weight = 55 },
-	{ name = "Legendary", color = Color3.fromRGB(240, 165, 60),  income = 1500,  speedMult = 0.38, weight = 20 },
-	{ name = "Mythical",  color = Color3.fromRGB(240, 95, 150),  income = 10000, speedMult = 0.28, weight = 5 },
+	-- `alertMult` scales an enemy notice radius while you carry one of these:
+	-- a Common is barely noticed, a Mythical wakes the whole field.
+	{ name = "Common",    color = Color3.fromRGB(148, 155, 164), income = 1,     speedMult = 0.92, weight = 550, alertMult = 1.0 },
+	{ name = "Uncommon",  color = Color3.fromRGB(96, 190, 120),  income = 8,     speedMult = 0.80, weight = 250, alertMult = 1.3 },
+	{ name = "Rare",      color = Color3.fromRGB(88, 148, 235),  income = 40,    speedMult = 0.66, weight = 120, alertMult = 1.8 },
+	{ name = "Epic",      color = Color3.fromRGB(168, 110, 235), income = 250,   speedMult = 0.50, weight = 55,  alertMult = 2.6 },
+	{ name = "Legendary", color = Color3.fromRGB(240, 165, 60),  income = 1500,  speedMult = 0.38, weight = 20,  alertMult = 6.0 },
+	{ name = "Mythical",  color = Color3.fromRGB(240, 95, 150),  income = 10000, speedMult = 0.28, weight = 5,   alertMult = 10.0 },
 }
 
 -- Fast lookup by rarity name (built below).

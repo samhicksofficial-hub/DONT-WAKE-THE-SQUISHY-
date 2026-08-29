@@ -116,6 +116,7 @@ SquishyService.ApplySpeed = applySpeed
 local function restorePlayer(player: Player)
 	player:SetAttribute("Carrying", nil)
 	player:SetAttribute("CarrySpeedMult", nil)
+	player:SetAttribute("CarryRarity", nil)
 	applySpeed(player)
 end
 
@@ -200,6 +201,9 @@ local function onPickup(player: Player, model: Model)
 
 	carrying[player] = { model = model, def = def }
 	player:SetAttribute("Carrying", def.name)
+	-- EnemyService scales its notice radius by this: rarer cargo gives you away
+	-- from much further off.
+	player:SetAttribute("CarryRarity", def.rarity)
 	-- applySpeed writes CarrySpeedMult (softened by the Carry upgrade), so the
 	-- HUD shows the slowdown the player actually feels.
 	applySpeed(player)
@@ -353,6 +357,7 @@ local function onCharacterAdded(player: Player, character: Model)
 	end
 	player:SetAttribute("Carrying", nil)
 	player:SetAttribute("CarrySpeedMult", nil)
+	player:SetAttribute("CarryRarity", nil)
 
 	local humanoid = character:WaitForChild("Humanoid", 10)
 	if humanoid == nil or not humanoid:IsA("Humanoid") then
