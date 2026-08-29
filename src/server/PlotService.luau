@@ -51,6 +51,17 @@ local SPAWN_INSET = 4 -- fallback spawn marker distance in from the front edge
 -- its own standing offset, so lifting it here too would drop the character.
 local SPAWN_HEIGHT = 0.5
 
+-- The upgrade plaque, matched to the reference: butter-yellow card with a fat
+-- black outline, amber arrow badge, and two stacked lines (price, level step).
+local PLAQUE_YELLOW = Color3.fromRGB(255, 214, 74)
+local PLAQUE_ARROW_BG = Color3.fromRGB(246, 158, 26)
+local PLAQUE_ARROW = Color3.new(1, 1, 1)
+-- How high above the collect pad the plaque floats.
+-- Clear of the money label sitting on the pad below it.
+local UPGRADE_PLAQUE_LIFT = 5.6
+-- Roughly one pad wide, so neighbouring plaques never overlap.
+local UPGRADE_PLAQUE_SIZE = Vector2.new(5, 3.1)
+
 local COLOR_MONEY = Color3.fromRGB(85, 255, 85)
 local COLOR_REFUSE = Color3.fromRGB(255, 70, 70)
 local COLOR_WHITE = Color3.new(1, 1, 1)
@@ -73,6 +84,7 @@ type SlotRecord = {
 	squishy: Model?,
 	upgradePad: BasePart?,
 	upgradeLabel: TextLabel?,
+	upgradeStepLabel: TextLabel?,
 	lastUpgradeTouch: number,
 	pending: number,
 	lastTouch: number,
@@ -377,6 +389,85 @@ end
 
 -- ------------------------------------------------------------- levelling --
 
+-- The yellow upgrade plaque: a rounded card with a fat black outline, an arrow
+-- badge on the left and two stacked lines on the right — the big price and the
+-- small "Lvl 4 > Lvl 5" step. Returns both labels so the caller can retext them.
+local function buildUpgradePlaque(gui: BillboardGui): (TextLabel, TextLabel)
+	local card = Instance.new("Frame")
+	card.Name = "Card"
+	card.Size = UDim2.fromScale(1, 1)
+	card.BackgroundColor3 = PLAQUE_YELLOW
+	card.BorderSizePixel = 0
+	card.Parent = gui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.26, 0)
+	corner.Parent = card
+
+	local outline = Instance.new("UIStroke")
+	outline.Thickness = 4
+	outline.Color = Color3.new(0, 0, 0)
+	outline.LineJoinMode = Enum.LineJoinMode.Round
+	outline.Parent = card
+
+	-- Arrow badge: a darker rounded square with an up-arrow glyph in it.
+	local badge = Instance.new("Frame")
+	badge.Name = "ArrowBadge"
+	badge.AnchorPoint = Vector2.new(0, 0.5)
+	badge.Position = UDim2.fromScale(0.04, 0.5)
+	badge.Size = UDim2.fromScale(0.21, 0.76)
+	badge.BackgroundColor3 = PLAQUE_ARROW_BG
+	badge.BorderSizePixel = 0
+	badge.Parent = card
+	local badgeCorner = Instance.new("UICorner")
+	badgeCorner.CornerRadius = UDim.new(0.25, 0)
+	badgeCorner.Parent = badge
+
+	local arrow = Instance.new("TextLabel")
+	arrow.Name = "Arrow"
+	arrow.BackgroundTransparency = 1
+	arrow.Size = UDim2.fromScale(1, 1)
+	arrow.Font = Enum.Font.FredokaOne
+	arrow.Text = "\u{2B06}" -- upward arrow
+	arrow.TextScaled = true
+	arrow.TextColor3 = PLAQUE_ARROW
+	arrow.TextStrokeTransparency = 0.2
+	arrow.TextStrokeColor3 = Color3.new(0, 0, 0)
+	arrow.Parent = badge
+
+	local price = Instance.new("TextLabel")
+	price.Name = "Price"
+	price.BackgroundTransparency = 1
+	price.AnchorPoint = Vector2.new(0, 0)
+	price.Position = UDim2.fromScale(0.28, 0.07)
+	price.Size = UDim2.fromScale(0.68, 0.46)
+	price.Font = Enum.Font.FredokaOne
+	price.Text = ""
+	price.TextScaled = true
+	price.TextColor3 = COLOR_WHITE
+	price.TextStrokeTransparency = 0
+	price.TextStrokeColor3 = Color3.new(0, 0, 0)
+	price.Parent = card
+
+	local step = Instance.new("TextLabel")
+	step.Name = "Step"
+	step.BackgroundTransparency = 1
+	step.AnchorPoint = Vector2.new(0, 0)
+	step.Position = UDim2.fromScale(0.28, 0.55)
+	step.Size = UDim2.fromScale(0.68, 0.38)
+	step.Font = Enum.Font.FredokaOne
+	step.Text = ""
+	step.TextScaled = true
+	-- White on a black stroke: cocoa-on-yellow washed out at play distance.
+	step.TextColor3 = COLOR_WHITE
+	step.TextStrokeTransparency = 0
+	step.TextStrokeColor3 = Color3.new(0, 0, 0)
+	step.Parent = card
+
+	return price, step
+end
+
+
 -- Refreshes the squishy's own billboard and the upgrade pad's price line to
 -- match its current level.
 local function refreshSlotLevel(slot: SlotRecord)
@@ -400,13 +491,20 @@ local function refreshSlotLevel(slot: SlotRecord)
 		end
 	end
 
-	local label = slot.upgradeLabel
-	if label ~= nil then
+	local price = slot.upgradeLabel
+	local step = slot.upgradeStepLabel
+	if price ~= nil then
 		local cost = Config.levelUpCost(slot.baseIncome, slot.rarity, slot.level)
 		if cost == nil then
-			label.Text = "MAX LEVEL"
+			price.Text = "MAX"
+			if step ~= nil then
+				step.Text = ("Lvl %d"):format(slot.level)
+			end
 		else
-			label.Text = ("%s\nLvl %d > %d"):format(Util.formatMoney(cost), slot.level, slot.level + 1)
+			price.Text = Util.formatMoney(cost)
+			if step ~= nil then
+				step.Text = ("Lvl %d > Lvl %d"):format(slot.level, slot.level + 1)
+			end
 		end
 	end
 end
@@ -448,8 +546,21 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 			Enum.Material.Neon
 		)
 		pad.CanCollide = false
-		local gui = newBillboard(pad, "UpgradeGui", 6, 2.6, 2.4, 70)
-		slot.upgradeLabel = newLabel(gui, "", COLOR_WHITE, 1, 1)
+		-- The plaque floats above the collect pad rather than over the upgrade
+		-- slab itself: that is where the reference puts it, and it keeps the
+		-- price clear of the money label sitting on the green pad below.
+		local anchor = slot.collectPad or pad
+		local gui = newBillboard(
+			anchor,
+			"UpgradeGui",
+			UPGRADE_PLAQUE_SIZE.X,
+			UPGRADE_PLAQUE_SIZE.Y,
+			UPGRADE_PLAQUE_LIFT,
+			95
+		)
+		local price, step = buildUpgradePlaque(gui)
+		slot.upgradeLabel = price
+		slot.upgradeStepLabel = step
 		slot.upgradePad = pad
 		table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
 			onUpgradeTouched(plot, slot, hitPart)
@@ -457,7 +568,9 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 	end
 	pad.Transparency = 0
 	pad.CanTouch = true
-	local gui = pad:FindFirstChild("UpgradeGui")
+	-- The plaque hangs off the collect pad, not the upgrade slab.
+	local anchor = slot.collectPad or pad
+	local gui = anchor:FindFirstChild("UpgradeGui")
 	if gui ~= nil and gui:IsA("BillboardGui") then
 		gui.Enabled = true
 	end
@@ -800,6 +913,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			squishy = nil,
 			upgradePad = nil,
 			upgradeLabel = nil,
+			upgradeStepLabel = nil,
 			lastUpgradeTouch = 0,
 			pending = 0,
 			lastTouch = 0,
