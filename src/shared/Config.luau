@@ -375,4 +375,22 @@ Config.Plot = {
 	BaseSize = Vector2.new(56, 42), -- XZ footprint of a plot (4 per 240-wide edge)
 }
 
+-- Icons from the Free Icon Pack 3.0.1 (Basic), uploaded once to the owner's
+-- account. A local PNG can never be referenced at runtime, so these are the
+-- moderated asset ids the game actually draws; they only need redoing if the
+-- game moves to a different account. tools/upload_icons.md records the source
+-- file behind each id.
+Config.Icons = {
+	Upgrade = "rbxassetid://86014261095925",
+	House = "rbxassetid://118336776033036",
+	Cash = "rbxassetid://98948172539240",
+	Gift = "rbxassetid://125895167437717",
+	Calendar = "rbxassetid://76476455943304",
+	Lock = "rbxassetid://84394998921158",
+	Shield = "rbxassetid://73099523361961",
+	Star = "rbxassetid://135507557051697",
+	Coil = "rbxassetid://77650920811206",
+	Wheel = "rbxassetid://91374848059044",
+}
+
 return Config

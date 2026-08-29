@@ -378,6 +378,34 @@ pale-strawberry checkered walkway, cream walls, frosting-pink roofs, butter slot
 tiles, candy pads). Nothing is darker than a soft caramel; text uses
 `Palette.Ink`, a soft cocoa, never pure black.
 
+## Icons (`Config.Icons`)
+
+Every icon the game draws is a Roblox asset id, never a file path — a local PNG
+cannot be referenced at runtime. The ids live in `Config.Icons` and their
+provenance is recorded in `tools/upload_icons.md`.
+
+Rules:
+- **Never inline an `rbxassetid://` in a builder or UI module.** Add a key to
+  `Config.Icons` and reference it, so one upload swap updates every use.
+- Icons are drawn untinted (`ImageColor3` white) so the pack's own colour and
+  black outline come through. `ImageColor3` is reserved for *state* — the
+  upgrade plaque greys its arrow with it when the owner cannot afford a level.
+- Use `ScaleType = Fit`, never `Stretch`: the pack's art is square and
+  stretching it breaks the outline weight.
+- A billboard is not a face of its part. When a part is hidden by setting
+  `Transparency = 1`, any billboard on it must be switched off separately
+  (`gui.Enabled = false`) or the icon hangs in mid-air — see the next-floor post.
+
+Who draws what:
+
+| Key | Drawn by |
+|---|---|
+| `Upgrade` | the arrow on the podium upgrade plaque (`PlotService`) |
+| `House` | the marker floating over every base, and the vacant-plot sign (`BaseBuilder`) |
+| `Lock` | slot unlock pads and the next-floor post (`PlotService`) |
+| `Cash`, `Wheel`, `Gift` | the seven daily reward cards, one per reward kind (`DailyUi`) |
+| `Calendar`, `Shield`, `Star`, `Coil` | uploaded and staged, not drawn yet |
+
 ## Still parked (needs the user)
 Icon-based UI props in the reference (Slap Protection shield, Lock Base padlock,
 gear/shop item art) need uploaded image assets and gamepass ids; they are NOT

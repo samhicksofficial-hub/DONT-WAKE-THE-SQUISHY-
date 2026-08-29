@@ -102,9 +102,8 @@ local SPAWN_INSET = 4 -- spawn marker this far in from the front edge
 local SPAWN_MARKER_HEIGHT = 1
 
 local HOUSE_LIFT = 9 -- house marker floats this far above the roof
-local HOUSE_BODY = Vector3.new(7, 5.2, 7)
-local HOUSE_ROOF_HEIGHT = 3.8
-local HOUSE_ROOF_OVERHANG = 1.1
+local HOUSE_ICON_STUDS = 9 -- billboard size of the floating house icon
+local HOUSE_ICON_DISTANCE = 400
 local BOB_HEIGHT = 0.8
 local BOB_SPEED = 1.7
 local SPIN_SPEED = 0.6
@@ -112,7 +111,6 @@ local HOUSE_STEP = 1 / 30
 
 -- Colours the palette does not carry (glass, house trimmings, lamp warmth).
 local PANE_COLOR = Color3.fromRGB(24, 28, 36)
-local HOUSE_WINDOW_COLOR = Color3.fromRGB(96, 178, 240)
 local LAMP_COLOR = Color3.fromRGB(255, 246, 228)
 local WHITE = Color3.new(1, 1, 1)
 local BLACK = Color3.new(0, 0, 0)
@@ -139,20 +137,6 @@ local function newProp(parent: Instance, name: string, size: Vector3, cf: CFrame
 	part.CanCollide = false
 	part.CanTouch = false
 	return part
-end
-
-local function newWedge(parent: Instance, name: string, size: Vector3, cf: CFrame, color: Color3): WedgePart
-	local wedge = Instance.new("WedgePart")
-	wedge.Name = name
-	wedge.Size = size
-	wedge.CFrame = cf
-	wedge.Color = color
-	wedge.Material = Enum.Material.SmoothPlastic
-	wedge.Anchored = true
-	wedge.CanCollide = false
-	wedge.CanTouch = false
-	wedge.Parent = parent
-	return wedge
 end
 
 -- ------------------------------------------------------- house marker loop --
@@ -509,54 +493,44 @@ end
 
 -- ------------------------------------------------------------ house marker --
 
--- Stylised house floating over the roof: orange body, red pitched roof from two
--- wedges, a white door and a small blue window. Registered with the shared
--- animation loop rather than spinning up a loop of its own.
+-- The house icon floating over the roof. It is a flat billboard rather than a
+-- built model: the reference games mark a base with a drawn icon, and a
+-- billboard reads the same from every angle instead of showing its back.
+--
+-- It still joins the shared animation loop so it bobs. The loop's spin has no
+-- visible effect on a billboard (they always face the camera), which is fine —
+-- a flat icon should not appear to turn edge-on anyway.
 local function buildHouseMarker(model: Model, baseCFrame: CFrame)
 	local house = Instance.new("Model")
 	house.Name = "HouseMarker"
 
-	local body = newProp(house, "Body", HOUSE_BODY, CFrame.new(), Palette.HouseBody, Enum.Material.SmoothPlastic)
+	-- An invisible anchor: the loop pivots the model, and the billboard rides it.
+	local body = newProp(
+		house,
+		"Body",
+		Vector3.new(1, 1, 1),
+		CFrame.new(),
+		Palette.HouseBody,
+		Enum.Material.SmoothPlastic
+	)
+	body.Transparency = 1
 	house.PrimaryPart = body
 
-	-- A WedgePart's tall face is its BACK (+Z) and it slopes down toward the
-	-- front, so the front half sits unrotated and the back half is spun 180
-	-- degrees: both tall faces meet at the ridge.
-	local roofWidth = HOUSE_BODY.X + HOUSE_ROOF_OVERHANG
-	local roofDepth = HOUSE_BODY.Z + HOUSE_ROOF_OVERHANG
-	local roofY = HOUSE_BODY.Y / 2 + HOUSE_ROOF_HEIGHT / 2
-	newWedge(
-		house,
-		"RoofFront",
-		Vector3.new(roofWidth, HOUSE_ROOF_HEIGHT, roofDepth / 2),
-		CFrame.new(0, roofY, -roofDepth / 4),
-		Palette.HouseRoof
-	)
-	newWedge(
-		house,
-		"RoofBack",
-		Vector3.new(roofWidth, HOUSE_ROOF_HEIGHT, roofDepth / 2),
-		CFrame.new(0, roofY, roofDepth / 4) * CFrame.Angles(0, math.pi, 0),
-		Palette.HouseRoof
-	)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "HouseGui"
+	gui.Size = UDim2.fromScale(HOUSE_ICON_STUDS, HOUSE_ICON_STUDS)
+	gui.AlwaysOnTop = false
+	gui.MaxDistance = HOUSE_ICON_DISTANCE
+	gui.Adornee = body
+	gui.Parent = body
 
-	local faceZ = -(HOUSE_BODY.Z / 2 + 0.1)
-	newProp(
-		house,
-		"Door",
-		Vector3.new(1.2, 1.8, 0.2),
-		CFrame.new(-0.8, -HOUSE_BODY.Y / 2 + 0.9, faceZ),
-		Palette.BaseTrim,
-		Enum.Material.SmoothPlastic
-	)
-	newProp(
-		house,
-		"Window",
-		Vector3.new(1, 1, 0.2),
-		CFrame.new(1, 0.6, faceZ),
-		HOUSE_WINDOW_COLOR,
-		Enum.Material.SmoothPlastic
-	)
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon"
+	icon.BackgroundTransparency = 1
+	icon.Size = UDim2.fromScale(1, 1)
+	icon.Image = Config.Icons.House
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.Parent = gui
 
 	local origin = baseCFrame * CFrame.new(0, ROOF_TOP + HOUSE_LIFT, 0)
 	house:PivotTo(origin)
@@ -722,10 +696,22 @@ local function buildVacantSign(model: Model, baseCFrame: CFrame)
 	gui.Adornee = board
 	gui.Parent = board
 
+	-- A house icon over the words: the sign reads as "an empty base" at a
+	-- distance where the text is still too small to make out.
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon"
+	icon.BackgroundTransparency = 1
+	icon.AnchorPoint = Vector2.new(0.5, 0)
+	icon.Position = UDim2.fromScale(0.5, 0.04)
+	icon.Size = UDim2.fromScale(0.36, 0.36)
+	icon.Image = Config.Icons.House
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.Parent = gui
+
 	local title = Instance.new("TextLabel")
 	title.BackgroundTransparency = 1
-	title.Position = UDim2.fromScale(0.05, 0.12)
-	title.Size = UDim2.fromScale(0.9, 0.4)
+	title.Position = UDim2.fromScale(0.05, 0.43)
+	title.Size = UDim2.fromScale(0.9, 0.27)
 	title.Font = Enum.Font.FredokaOne
 	title.Text = "PLOT"
 	title.TextScaled = true
@@ -735,8 +721,8 @@ local function buildVacantSign(model: Model, baseCFrame: CFrame)
 	title.Parent = gui
 
 	local subtitle = title:Clone()
-	subtitle.Position = UDim2.fromScale(0.05, 0.5)
-	subtitle.Size = UDim2.fromScale(0.9, 0.36)
+	subtitle.Position = UDim2.fromScale(0.05, 0.7)
+	subtitle.Size = UDim2.fromScale(0.9, 0.24)
 	subtitle.Text = "AVAILABLE"
 	subtitle.TextColor3 = (Palette :: any).Ink or WHITE
 	subtitle.Parent = gui

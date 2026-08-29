@@ -54,10 +54,12 @@ local SPAWN_HEIGHT = 0.5
 -- The upgrade plaque, matched to the reference: butter-yellow card with a fat
 -- black outline, amber arrow badge, and two stacked lines (price, level step).
 local PLAQUE_YELLOW = Color3.fromRGB(255, 214, 74)
-local PLAQUE_ARROW = Color3.fromRGB(255, 166, 32)
+-- The Upgrade icon ships its own gold, so "on" is an untinted white and
+-- "off" is the same slate the card greys to.
+local PLAQUE_ARROW = Color3.new(1, 1, 1)
 -- The cannot-afford state, straight from the reference: slate card, pale arrow.
 local PLAQUE_GREY = Color3.fromRGB(110, 114, 124)
-local PLAQUE_ARROW_GREY = Color3.fromRGB(235, 238, 242)
+local PLAQUE_ARROW_GREY = Color3.fromRGB(158, 162, 172)
 -- The board sits on the podium: this much clear air under it, and this far
 -- forward of the podium's front face so it never z-fights the platform.
 local PLAQUE_STAND_OFF = 0.35
@@ -91,7 +93,7 @@ type SlotRecord = {
 	upgradePad: BasePart?,
 	upgradeLabel: TextLabel?,
 	upgradeStepLabel: TextLabel?,
-	upgradeArrow: TextLabel?,
+	upgradeArrow: ImageLabel?,
 	upgradeCard: Frame?,
 	lastUpgradeTouch: number,
 	pending: number,
@@ -172,6 +174,19 @@ local function newLabel(parent: Instance, text: string, color: Color3, order: nu
 	label.TextScaled = true
 	label.Parent = parent
 	return label
+end
+
+-- An icon sized to sit in the same UIListLayout column as newLabel's text.
+local function newIcon(parent: Instance, image: string, order: number, heightScale: number): ImageLabel
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon" .. tostring(order)
+	icon.BackgroundTransparency = 1
+	icon.Size = UDim2.new(1, 0, heightScale, 0)
+	icon.LayoutOrder = order
+	icon.Image = image
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.Parent = parent
+	return icon
 end
 
 -- ------------------------------------------------------------------ helpers --
@@ -402,16 +417,19 @@ local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	pad.CanCollide = false
 	pad.Transparency = 1
 	pad.CanTouch = false
-	local gui = newBillboard(pad, "UnlockGui", 5, 2.6, 3, 90)
+	local gui = newBillboard(pad, "UnlockGui", 5, 3.6, 3.4, 90)
 	gui.Enabled = false
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Vertical
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	layout.Parent = gui
+	-- A padlock above the price: locked slots read as locked before the price
+	-- is legible, which is what tells a new player the slot is buyable at all.
+	newIcon(gui, Config.Icons.Lock, 0, 0.34)
 	-- Prices are per position ON the ground floor, not per global slot index.
 	local price = Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
-	newLabel(gui, Util.formatMoney(price), COLOR_MONEY, 1, 0.55)
-	newLabel(gui, "Unlock", COLOR_WHITE, 2, 0.45)
+	newLabel(gui, Util.formatMoney(price), COLOR_MONEY, 1, 0.38)
+	newLabel(gui, "Unlock", COLOR_WHITE, 2, 0.28)
 	slot.unlockPad = pad
 	slot.unlockGui = gui
 	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
@@ -426,7 +444,7 @@ end
 -- The yellow upgrade plaque: a rounded card with a fat black outline, an arrow
 -- badge on the left and two stacked lines on the right — the big price and the
 -- small "Lvl 4 > Lvl 5" step. Returns both labels so the caller can retext them.
-local function buildUpgradePlaque(board: BasePart): (TextLabel, TextLabel)
+local function buildUpgradePlaque(board: BasePart): (TextLabel, TextLabel, ImageLabel, Frame)
 	-- Painted on the board itself, on both faces so it reads from either side.
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = "UpgradeGui"
@@ -457,20 +475,19 @@ local function buildUpgradePlaque(board: BasePart): (TextLabel, TextLabel)
 	outline.LineJoinMode = Enum.LineJoinMode.Round
 	outline.Parent = card
 
-	-- The reference draws a bare fat orange arrow straight on the card, no
-	-- badge box behind it.
-	local arrow = Instance.new("TextLabel")
+	-- The reference draws a bare fat outlined arrow straight on the card, no
+	-- badge box behind it. This is the pack's Upgrade icon, which already
+	-- carries its own gold fill and black outline — so it is drawn untinted
+	-- and only tinted grey when the owner cannot afford the level.
+	local arrow = Instance.new("ImageLabel")
 	arrow.Name = "Arrow"
 	arrow.BackgroundTransparency = 1
 	arrow.AnchorPoint = Vector2.new(0, 0.5)
-	arrow.Position = UDim2.fromScale(0.02, 0.5)
-	arrow.Size = UDim2.fromScale(0.24, 0.85)
-	arrow.Font = Enum.Font.FredokaOne
-	arrow.Text = "\u{2B06}" -- upward arrow
-	arrow.TextScaled = true
-	arrow.TextColor3 = PLAQUE_ARROW
-	arrow.TextStrokeTransparency = 0
-	arrow.TextStrokeColor3 = Color3.new(0, 0, 0)
+	arrow.Position = UDim2.fromScale(0.03, 0.5)
+	arrow.Size = UDim2.fromScale(0.22, 0.78)
+	arrow.Image = Config.Icons.Upgrade
+	arrow.ImageColor3 = PLAQUE_ARROW
+	arrow.ScaleType = Enum.ScaleType.Fit
 	arrow.ZIndex = 3
 	arrow.Parent = card
 
@@ -526,7 +543,7 @@ local function updatePlaqueAffordability(plot: PlotRecord, slot: SlotRecord)
 	pad.Color = affordable and PLAQUE_YELLOW or PLAQUE_GREY
 	local arrow = slot.upgradeArrow
 	if arrow ~= nil then
-		arrow.TextColor3 = affordable and PLAQUE_ARROW or PLAQUE_ARROW_GREY
+		arrow.ImageColor3 = affordable and PLAQUE_ARROW or PLAQUE_ARROW_GREY
 	end
 end
 
@@ -1170,6 +1187,11 @@ function buildFloorPrompt(plot: PlotRecord)
 	post.CanCollide = false
 	post.CanTouch = true
 
+	-- The prompt only shows its text once you are within 12 studs; the padlock
+	-- floating over the post is what marks it from across the base.
+	local postGui = newBillboard(post, "FloorIcon", 3.4, 3.4, 4.2, 120)
+	newIcon(postGui, Config.Icons.Lock, 0, 1)
+
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "FloorPrompt"
 	prompt.ActionText = "Unlock!"
@@ -1184,10 +1206,15 @@ function buildFloorPrompt(plot: PlotRecord)
 		if cost == nil then
 			prompt.Enabled = false
 			post.Transparency = 1
+			-- The post goes invisible at the last floor; a billboard is not a
+			-- face of the part, so it has to be switched off by hand or a
+			-- padlock is left hanging in mid-air over nothing.
+			postGui.Enabled = false
 			return
 		end
 		prompt.Enabled = true
 		post.Transparency = 0
+		postGui.Enabled = true
 		prompt.ObjectText = ("Next Floor (%s)"):format(direction == "below" and "basement" or "upstairs")
 		prompt.ActionText = ("%s  Unlock!"):format(Util.formatMoney(cost))
 	end

@@ -39,19 +39,19 @@ it when the IDs exist) and a little gameplay work behind each one:
 | 2x Money | A permanent multiplier stacked on top of rebirths |
 | Extra Slots | Starts you with more unlocked plot slots |
 
-## 3. Images — for the icon-style props
-Upload at **Creator Dashboard → Images** (or Studio → Asset Manager → Images →
-Add Images), then right-click → **Copy ID**. Send the `rbxassetid://…` numbers.
+## 3. Images — DONE
+The Free Icon Pack 3.0.1 (Basic) you sent has been uploaded to your account and
+wired in: see `tools/upload_icons.md` for which asset id came from which file,
+and `Config.Icons` for the ids themselves.
 
-| Image | Currently | Wanted for |
-|---|---|---|
-| House marker | Built from parts (orange box + red wedge roof) | The floating icon above each base |
-| Shield icon | not built | "Slap Protection" purchase pad in the base |
-| Padlock icon | not built | "Lock Base" purchase pad in the base |
-| Gear icons | not built | Shop/gear items (speed coil, sleep powder, etc.) |
-| Stall / machine art | Built from parts | Field props — optional, parts read fine at distance |
+That covers the house marker, the padlock and the shield rows that used to be
+listed here. `Calendar`, `Star` and `Coil` are uploaded and staged but not drawn
+anywhere yet — they are waiting on the daily-rewards HUD button, the event board
+and the speed-coil gear respectively.
 
-Roughly 512×512 PNGs with transparency work best for world icons.
+Nothing further is needed from you for images unless you want art the pack does
+not cover (field stalls and machines are still built from parts, which read fine
+at distance).
 
 ## 3b. Enable DataStores
 Daily-login streaks are the one thing that must survive a session, so they use

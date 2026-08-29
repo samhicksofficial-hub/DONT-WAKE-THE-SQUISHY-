@@ -30,6 +30,14 @@ local TEXT = Color3.new(1, 1, 1)
 local TEXT_DIM = Color3.fromRGB(168, 174, 188)
 local CLOSE_RED = Color3.fromRGB(232, 64, 82)
 
+-- One icon per reward kind in Config.DailyRewards. Anything unrecognised falls
+-- back to the gift, so adding a reward kind never leaves a card blank.
+local REWARD_ICON: { [string]: string } = {
+	cash = Config.Icons.Cash,
+	spins = Config.Icons.Wheel,
+	squishy = Config.Icons.Gift,
+}
+
 local function corner(parent: Instance, scale: number)
 	local ui = Instance.new("UICorner")
 	ui.CornerRadius = UDim.new(scale, 0)
@@ -136,9 +144,23 @@ function DailyUi.Start()
 		corner(card, 0.12)
 		stroke(card, 2, Color3.new(0, 0, 0))
 
-		label(card, ("Day %d"):format(reward.day), UDim2.fromScale(0.9, 0.2), UDim2.fromScale(0.05, 0.04), TEXT_DIM).ZIndex = 33
-		label(card, reward.label, UDim2.fromScale(0.9, 0.34), UDim2.fromScale(0.05, 0.28), TEXT).ZIndex = 33
-		local status = label(card, "Locked", UDim2.fromScale(0.9, 0.22), UDim2.fromScale(0.05, 0.7), TEXT_DIM)
+		label(card, ("Day %d"):format(reward.day), UDim2.fromScale(0.9, 0.16), UDim2.fromScale(0.05, 0.03), TEXT_DIM).ZIndex = 33
+
+		-- What the day actually pays, as a picture: seven cards of near-identical
+		-- text is hard to read at a glance, and the icon carries at card size.
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "Icon"
+		icon.BackgroundTransparency = 1
+		icon.AnchorPoint = Vector2.new(0.5, 0)
+		icon.Position = UDim2.fromScale(0.5, 0.2)
+		icon.Size = UDim2.fromScale(0.52, 0.3)
+		icon.Image = REWARD_ICON[reward.kind] or Config.Icons.Gift
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.ZIndex = 33
+		icon.Parent = card
+
+		label(card, reward.label, UDim2.fromScale(0.9, 0.24), UDim2.fromScale(0.05, 0.51), TEXT).ZIndex = 33
+		local status = label(card, "Locked", UDim2.fromScale(0.9, 0.2), UDim2.fromScale(0.05, 0.76), TEXT_DIM)
 		status.ZIndex = 33
 
 		table.insert(cards, { frame = card, status = status })
