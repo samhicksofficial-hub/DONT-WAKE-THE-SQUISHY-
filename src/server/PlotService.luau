@@ -54,8 +54,10 @@ local SPAWN_HEIGHT = 0.5
 -- The upgrade plaque, matched to the reference: butter-yellow card with a fat
 -- black outline, amber arrow badge, and two stacked lines (price, level step).
 local PLAQUE_YELLOW = Color3.fromRGB(255, 214, 74)
-local PLAQUE_ARROW_BG = Color3.fromRGB(246, 158, 26)
-local PLAQUE_ARROW = Color3.new(1, 1, 1)
+local PLAQUE_ARROW = Color3.fromRGB(255, 166, 32)
+-- The cannot-afford state, straight from the reference: slate card, pale arrow.
+local PLAQUE_GREY = Color3.fromRGB(110, 114, 124)
+local PLAQUE_ARROW_GREY = Color3.fromRGB(235, 238, 242)
 -- The board sits on the podium: this much clear air under it, and this far
 -- forward of the podium's front face so it never z-fights the platform.
 local PLAQUE_STAND_OFF = 0.35
@@ -89,6 +91,8 @@ type SlotRecord = {
 	upgradePad: BasePart?,
 	upgradeLabel: TextLabel?,
 	upgradeStepLabel: TextLabel?,
+	upgradeArrow: TextLabel?,
+	upgradeCard: Frame?,
 	lastUpgradeTouch: number,
 	pending: number,
 	lastTouch: number,
@@ -453,32 +457,22 @@ local function buildUpgradePlaque(board: BasePart): (TextLabel, TextLabel)
 	outline.LineJoinMode = Enum.LineJoinMode.Round
 	outline.Parent = card
 
-	-- Arrow badge: a darker rounded square with an up-arrow glyph in it.
-	local badge = Instance.new("Frame")
-	badge.Name = "ArrowBadge"
-	badge.AnchorPoint = Vector2.new(0, 0.5)
-	badge.Position = UDim2.fromScale(0.04, 0.5)
-	badge.Size = UDim2.fromScale(0.21, 0.76)
-	badge.BackgroundColor3 = PLAQUE_ARROW_BG
-	badge.BorderSizePixel = 0
-	badge.ZIndex = 2
-	badge.Parent = card
-	local badgeCorner = Instance.new("UICorner")
-	badgeCorner.CornerRadius = UDim.new(0.25, 0)
-	badgeCorner.Parent = badge
-
+	-- The reference draws a bare fat orange arrow straight on the card, no
+	-- badge box behind it.
 	local arrow = Instance.new("TextLabel")
 	arrow.Name = "Arrow"
 	arrow.BackgroundTransparency = 1
-	arrow.Size = UDim2.fromScale(1, 1)
+	arrow.AnchorPoint = Vector2.new(0, 0.5)
+	arrow.Position = UDim2.fromScale(0.02, 0.5)
+	arrow.Size = UDim2.fromScale(0.24, 0.85)
 	arrow.Font = Enum.Font.FredokaOne
 	arrow.Text = "\u{2B06}" -- upward arrow
 	arrow.TextScaled = true
 	arrow.TextColor3 = PLAQUE_ARROW
-	arrow.TextStrokeTransparency = 0.2
+	arrow.TextStrokeTransparency = 0
 	arrow.TextStrokeColor3 = Color3.new(0, 0, 0)
 	arrow.ZIndex = 3
-	arrow.Parent = badge
+	arrow.Parent = card
 
 	local price = Instance.new("TextLabel")
 	price.Name = "Price"
@@ -511,13 +505,34 @@ local function buildUpgradePlaque(board: BasePart): (TextLabel, TextLabel)
 	step.ZIndex = 3
 	step.Parent = card
 
-	return price, step
+	return price, step, arrow, card
 end
 
+-- Greys the whole board out when the owner cannot afford the next level (or
+-- the squishy is maxed), exactly like the reference: slate card, pale arrow,
+-- the texts staying white. Flips back to yellow the moment they can.
+local function updatePlaqueAffordability(plot: PlotRecord, slot: SlotRecord)
+	local pad = slot.upgradePad
+	local card = slot.upgradeCard
+	if pad == nil or card == nil then
+		return
+	end
+	local cost = Config.levelUpCost(slot.baseIncome, slot.rarity, slot.level)
+	local money = tonumber(plot.player:GetAttribute("Money")) or 0
+	local affordable = cost ~= nil and money >= cost
+
+	card.BackgroundColor3 = affordable and PLAQUE_YELLOW or PLAQUE_GREY
+	-- The board part shows at the card's edges and back, so it greys too.
+	pad.Color = affordable and PLAQUE_YELLOW or PLAQUE_GREY
+	local arrow = slot.upgradeArrow
+	if arrow ~= nil then
+		arrow.TextColor3 = affordable and PLAQUE_ARROW or PLAQUE_ARROW_GREY
+	end
+end
 
 -- Refreshes the squishy's own billboard and the upgrade pad's price line to
 -- match its current level.
-local function refreshSlotLevel(slot: SlotRecord)
+local function refreshSlotLevel(plot: PlotRecord, slot: SlotRecord)
 	slot.income = Config.incomeAtLevel(slot.baseIncome, slot.rarity, slot.level)
 
 	local model = slot.squishy
@@ -554,6 +569,8 @@ local function refreshSlotLevel(slot: SlotRecord)
 			end
 		end
 	end
+
+	updatePlaqueAffordability(plot, slot)
 end
 
 -- One level, however it was asked for. Both the click and the walk-into path
@@ -577,7 +594,7 @@ local function tryUpgrade(plot: PlotRecord, slot: SlotRecord, buyer: Player)
 		return -- can't afford it; the board just does nothing
 	end
 	slot.level += 1
-	refreshSlotLevel(slot)
+	refreshSlotLevel(plot, slot)
 end
 
 local function onUpgradeTouched(plot: PlotRecord, slot: SlotRecord, hitPart: BasePart)
@@ -614,9 +631,11 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 			Enum.Material.SmoothPlastic
 		)
 		pad.CanCollide = false
-		local price, step = buildUpgradePlaque(pad)
+		local price, step, arrow, card = buildUpgradePlaque(pad)
 		slot.upgradeLabel = price
 		slot.upgradeStepLabel = step
+		slot.upgradeArrow = arrow
+		slot.upgradeCard = card
 		slot.upgradePad = pad
 
 		-- Click it from anywhere in the room, or just walk into it.
@@ -638,7 +657,7 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 	if gui ~= nil and gui:IsA("SurfaceGui") then
 		gui.Enabled = true
 	end
-	refreshSlotLevel(slot)
+	refreshSlotLevel(plot, slot)
 end
 
 local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
@@ -978,6 +997,8 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			upgradePad = nil,
 			upgradeLabel = nil,
 			upgradeStepLabel = nil,
+			upgradeArrow = nil,
+			upgradeCard = nil,
 			lastUpgradeTouch = 0,
 			pending = 0,
 			lastTouch = 0,
@@ -1015,6 +1036,16 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	plots[player] = plot
 	-- The purchase point for the next storey, up or down.
 	pcall(buildFloorPrompt, plot)
+
+	-- Money moves constantly (collections, purchases); every change re-judges
+	-- which plaques the owner can afford so they grey and un-grey live.
+	table.insert(plot.connections, player:GetAttributeChangedSignal("Money"):Connect(function()
+		for _, slot in plot.slots do
+			if slot.occupied then
+				pcall(updatePlaqueAffordability, plot, slot)
+			end
+		end
+	end))
 	return true
 end
 
@@ -1114,7 +1145,7 @@ local function rebuildPlot(player: Player)
 				if placedOk then
 					slot.level = entry.level or 1
 					slot.pending = entry.pending or 0
-					refreshSlotLevel(slot)
+					refreshSlotLevel(fresh, slot)
 					updateCollectLabel(fresh, slot)
 				end
 			end
@@ -1372,7 +1403,7 @@ function PlotService.StealSquishy(model: Model, thief: Player): boolean
 		return false
 	end
 	target.level = info.level or 1
-	refreshSlotLevel(target)
+	refreshSlotLevel(thiefPlot, target)
 	updateCollectLabel(thiefPlot, target)
 
 	-- Clear the victim's slot: the squishy, its pending cash and its pad.
