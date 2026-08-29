@@ -56,9 +56,10 @@ local SPAWN_HEIGHT = 0.5
 local PLAQUE_YELLOW = Color3.fromRGB(255, 214, 74)
 local PLAQUE_ARROW_BG = Color3.fromRGB(246, 158, 26)
 local PLAQUE_ARROW = Color3.new(1, 1, 1)
--- How high above the collect pad the plaque floats.
--- Clear of the money label sitting on the pad below it.
-local UPGRADE_PLAQUE_LIFT = 5
+-- The board sits on the podium: this much clear air under it, and this far
+-- forward of the podium's front face so it never z-fights the platform.
+local PLAQUE_STAND_OFF = 0.35
+local PLAQUE_FRONT_OFFSET = 0.6
 -- Roughly one pad wide, so neighbouring plaques never overlap.
 local UPGRADE_PLAQUE_SIZE = Vector2.new(4.6, 2.4)
 
@@ -555,8 +556,10 @@ local function refreshSlotLevel(slot: SlotRecord)
 	end
 end
 
-local function onUpgradeTouched(plot: PlotRecord, slot: SlotRecord, hitPart: BasePart)
-	if not slot.occupied or not isOwnerTouch(plot, hitPart) then
+-- One level, however it was asked for. Both the click and the walk-into path
+-- land here so they share the debounce, the ownership check and the spend.
+local function tryUpgrade(plot: PlotRecord, slot: SlotRecord, buyer: Player)
+	if not slot.occupied or buyer ~= plot.player then
 		return
 	end
 	local now = os.clock()
@@ -571,10 +574,17 @@ local function onUpgradeTouched(plot: PlotRecord, slot: SlotRecord, hitPart: Bas
 	end
 	local economy = servicesRef.EconomyService
 	if not economy.TrySpend(plot.player, cost) then
-		return -- can't afford it; the pad just does nothing
+		return -- can't afford it; the board just does nothing
 	end
 	slot.level += 1
 	refreshSlotLevel(slot)
+end
+
+local function onUpgradeTouched(plot: PlotRecord, slot: SlotRecord, hitPart: BasePart)
+	if not isOwnerTouch(plot, hitPart) then
+		return
+	end
+	tryUpgrade(plot, slot, plot.player)
 end
 
 -- The yellow "upgrade" step in front of an occupied slot. Built once per slot
@@ -586,12 +596,20 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 		-- BillboardGui: a billboard here kept losing its depth fight with the
 		-- slot platform behind it, and printing on a surface is what already
 		-- works for the money on the pad below.
+		-- Mounted on the podium's front edge, standing just above its surface,
+		-- the way the reference fixes the sign to the platform rather than
+		-- leaving it floating between the podium and the pad.
+		local platformTop = slot.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y
 		pad = newPart(
 			plot.model,
 			"UpgradePad" .. tostring(slot.index),
 			Vector3.new(UPGRADE_PLAQUE_SIZE.X, UPGRADE_PLAQUE_SIZE.Y, 0.35),
 			plot.baseCFrame
-				* CFrame.new(slot.localX, slot.floorTop + UPGRADE_PLAQUE_LIFT, slot.localZ - PAD_FORWARD),
+				* CFrame.new(
+					slot.localX,
+					platformTop + UPGRADE_PLAQUE_SIZE.Y / 2 + PLAQUE_STAND_OFF,
+					slot.localZ - PLATFORM_SIZE.Z / 2 - PLAQUE_FRONT_OFFSET
+				),
 			PLAQUE_YELLOW,
 			Enum.Material.SmoothPlastic
 		)
@@ -600,6 +618,16 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 		slot.upgradeLabel = price
 		slot.upgradeStepLabel = step
 		slot.upgradePad = pad
+
+		-- Click it from anywhere in the room, or just walk into it.
+		local click = Instance.new("ClickDetector")
+		click.Name = "UpgradeClick"
+		click.MaxActivationDistance = 40
+		click.Parent = pad
+		table.insert(plot.connections, click.MouseClick:Connect(function(clicker: Player)
+			tryUpgrade(plot, slot, clicker)
+		end))
+
 		table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
 			onUpgradeTouched(plot, slot, hitPart)
 		end))
