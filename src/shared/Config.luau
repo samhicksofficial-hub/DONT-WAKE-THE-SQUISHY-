@@ -147,15 +147,22 @@ Config.Field = {
 -- The look, matched to the reference screenshots (see the Map Design Contract
 -- in DESIGN.md). Base = one player's enclosed building.
 Config.Base = {
-	WallHeight = 14,
+	-- Interior height of ONE storey, floor to ceiling. Total wall height is
+	-- this times Config.Plot.Floors, so adding a floor makes the building
+	-- taller rather than squashing the rooms.
+	FloorHeight = 13,
+	FloorSlabThickness = 1, -- the slab between storeys
 	WallThickness = 1.5,
 	RoofThickness = 1.2,
 	FloorTop = 1.2,
 	TrimHeight = 0.8,      -- white strip along the top of each wall
 	WindowWidth = 10,
 	WindowHeight = 5,
-	WindowSill = 5,        -- height of the window's bottom edge above the floor
-	CeilingLights = 4,
+	WindowSill = 5,        -- height of the window's bottom edge above its floor
+	CeilingLights = 4,     -- per storey
+	-- Staircase up the left side of the plot, hugging the wall.
+	StairWidth = 7,
+	StairSteps = 11,
 }
 
 -- Cozy / ASMR-obby palette: milky pastels and food colours, nothing darker
@@ -259,11 +266,22 @@ Config.Products = {
 
 Config.Plot = {
 	Count = 8,                -- plot spots around the field
-	SlotCount = 10,           -- squishy slots per plot
+	Floors = 2,               -- storeys per base; slots fill the ground floor first
 	SlotsPerRow = 5,
+	RowsPerFloor = 2,
+	-- Floors * RowsPerFloor * SlotsPerRow. Slots 1-10 are downstairs,
+	-- 11-20 upstairs, so the second storey is something you grow into.
+	SlotCount = 20,
 	StartUnlocked = 4,
 	-- Price to unlock slot N (1-indexed; entries <= StartUnlocked are ignored).
-	UnlockPrices = { 0, 0, 0, 0, 150, 1000, 7500, 50000, 350000, 2500000 },
+	UnlockPrices = {
+		0, 0, 0, 0,
+		150, 1000, 7500, 50000, 350000, 2500000,
+		-- Upstairs: the second storey is late-game, priced past the first
+		-- rebirths rather than as a straight continuation.
+		18e6, 120e6, 800e6, 5e9, 32e9,
+		200e9, 1.3e12, 8e12, 50e12, 300e12,
+	},
 	AccrueTick = 0.5,         -- seconds between income accrual updates
 	BaseSize = Vector2.new(56, 42), -- XZ footprint of a plot (4 per 240-wide edge)
 }

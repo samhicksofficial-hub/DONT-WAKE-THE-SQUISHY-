@@ -62,6 +62,7 @@ type SlotRecord = {
 	index: number,
 	localX: number,
 	localZ: number,
+	floorTop: number,       -- the storey this slot stands on
 	unlocked: boolean,
 	occupied: boolean,
 	income: number,
@@ -233,7 +234,7 @@ end
 
 local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	local cf = plot.baseCFrame
-		* CFrame.new(slot.localX, plot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+		* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
 		* PAD_UPRIGHT
 	local pad = newPart(
 		plot.model,
@@ -252,7 +253,7 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 		"Rim",
 		Vector3.new(PAD_RIM_THICKNESS, PAD_DIAMETER + PAD_RIM_EXTRA, PAD_DIAMETER + PAD_RIM_EXTRA),
 		plot.baseCFrame
-			* CFrame.new(slot.localX, plot.floorTop + PAD_RIM_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+			* CFrame.new(slot.localX, slot.floorTop + PAD_RIM_THICKNESS / 2, slot.localZ - PAD_FORWARD)
 			* PAD_UPRIGHT,
 		Palette.SlotBorder,
 		Enum.Material.SmoothPlastic
@@ -327,7 +328,7 @@ end
 -- pad is revealed via revealUnlockPad.
 local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	local cf = plot.baseCFrame
-		* CFrame.new(slot.localX, plot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+		* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
 		* PAD_UPRIGHT
 	local pad = newPart(
 		plot.model,
@@ -470,6 +471,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	-- Shell first: floor, walls, roof, ceiling lights, house marker, owner sign
 	-- and spawn point, all reported back with the floor height to build on.
 	local floorTop = DEFAULT_FLOOR_TOP
+	local floorTops: { number } = { DEFAULT_FLOOR_TOP }
 	local spawnPoint: BasePart? = nil
 	local shellBuilt = false
 	local builder = getBaseBuilder()
@@ -479,6 +481,10 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			shellBuilt = true
 			if typeof(shell.floorTop) == "number" then
 				floorTop = shell.floorTop
+			end
+			-- One entry per storey; slots above the ground floor stand on these.
+			if typeof(shell.floorTops) == "table" and #shell.floorTops > 0 then
+				floorTops = shell.floorTops
 			end
 			local point = shell.spawnPoint
 			if typeof(point) == "Instance" and point:IsA("BasePart") then
@@ -560,11 +566,19 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 		onDepositTouched(plot, hitPart)
 	end))
 
-	-- Slot platforms in two staggered rows toward the back of the plot.
+	-- Slot platforms: staggered rows toward the back of the plot, filling the
+	-- ground floor before climbing to the next storey.
 	local slotsPerRow = Config.Plot.SlotsPerRow :: number
+	local rowsPerFloor = math.max(1, Config.Plot.RowsPerFloor :: number)
+	local slotsPerFloor = slotsPerRow * rowsPerFloor
 	for index = 1, Config.Plot.SlotCount :: number do
-		local row = math.floor((index - 1) / slotsPerRow)
-		local col = (index - 1) % slotsPerRow
+		local floorIndex = math.floor((index - 1) / slotsPerFloor)
+		local withinFloor = (index - 1) % slotsPerFloor
+		local row = math.floor(withinFloor / slotsPerRow)
+		local col = withinFloor % slotsPerRow
+		-- Upper storeys stand on their own slab; fall back to the ground floor
+		-- if the shell reported fewer floors than the config asks for.
+		local slotFloorTop = floorTops[floorIndex + 1] or floorTop
 		local localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING
 			+ (row == 0 and FRONT_ROW_STAGGER or 0)
 		local localZ = FRONT_ROW_Z + row * ROW_DEPTH
@@ -579,7 +593,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 				PLATFORM_BORDER_THICKNESS,
 				PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
 			),
-			baseCFrame * CFrame.new(localX, floorTop + PLATFORM_BORDER_THICKNESS / 2, localZ),
+			baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS / 2, localZ),
 			Palette.SlotBorder,
 			Enum.Material.SmoothPlastic
 		)
@@ -591,7 +605,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			"SlotPlatform" .. tostring(index),
 			PLATFORM_SIZE,
 			baseCFrame
-				* CFrame.new(localX, floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
+				* CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
 			unlocked and Palette.SlotPlatform or Palette.SlotBorder,
 			Enum.Material.SmoothPlastic
 		)
@@ -599,6 +613,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			index = index,
 			localX = localX,
 			localZ = localZ,
+			floorTop = slotFloorTop,
 			unlocked = unlocked,
 			occupied = false,
 			income = 0,
@@ -639,6 +654,49 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	return true
 end
 
+-- ------------------------------------------------------------ vacant plots --
+-- Every unclaimed spot still gets its building, so the row never has a hole in
+-- it. A vacant base is the same shell minus the owner's avatar and floating
+-- house, with a "PLOT AVAILABLE" sign; it carries no gameplay furniture and no
+-- connections, so tearing it down is just a Destroy.
+
+local vacantModels: { [number]: Model } = {}
+
+local function clearVacant(spotIndex: number)
+	local model = vacantModels[spotIndex]
+	if model ~= nil then
+		vacantModels[spotIndex] = nil
+		model:Destroy()
+	end
+end
+
+local function buildVacant(spotIndex: number)
+	if vacantModels[spotIndex] ~= nil or spotUsed[spotIndex] then
+		return
+	end
+	local builder = getBaseBuilder()
+	if builder == nil then
+		return -- no shell builder: leave the spot empty rather than half-build
+	end
+	local spotCFrame = (mapRef.plotSpots :: { CFrame })[spotIndex]
+	if spotCFrame == nil then
+		return
+	end
+	local spotPos = spotCFrame.Position
+	local baseCFrame = CFrame.new(spotPos.X, 0, spotPos.Z) * spotCFrame.Rotation
+
+	local model = Instance.new("Model")
+	model.Name = ("VacantPlot%d"):format(spotIndex)
+	local ok, err = pcall(builder.Build, nil, model, baseCFrame)
+	if not ok then
+		warn(("[PlotService] vacant plot %d failed: %s"):format(spotIndex, tostring(err)))
+		model:Destroy()
+		return
+	end
+	model.Parent = mapRef.plotFolder
+	vacantModels[spotIndex] = model
+end
+
 local function claimPlot(player: Player)
 	if plots[player] ~= nil then
 		return
@@ -655,12 +713,16 @@ local function claimPlot(player: Player)
 		return
 	end
 	spotUsed[spotIndex] = true
+	-- The placeholder goes before the real base goes up, so the two never
+	-- occupy the same spot.
+	clearVacant(spotIndex)
 	local ok, result = pcall(buildPlot, player, spotIndex)
 	if not ok or result ~= true then
 		spotUsed[spotIndex] = false
 		if not ok then
 			warn(("[PlotService] failed to build plot for %s: %s"):format(player.Name, tostring(result)))
 		end
+		buildVacant(spotIndex) -- put the placeholder back
 	end
 end
 
@@ -675,6 +737,8 @@ local function releasePlot(player: Player)
 		connection:Disconnect()
 	end
 	plot.model:Destroy()
+	-- The spot goes back to being an advertised empty plot.
+	buildVacant(plot.spotIndex)
 end
 
 -- ------------------------------------------------------------------ accrual --
@@ -695,6 +759,15 @@ function PlotService.Start(services: any, map: any)
 	mapRef = map
 	popupRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Popup") :: RemoteEvent
 	spotUsed = table.create(#(map.plotSpots :: { CFrame }), false)
+
+	-- Stand up a placeholder on every spot first, so an empty server still looks
+	-- like a street of bases. claimPlot swaps one out as each player arrives.
+	for spotIndex = 1, #(map.plotSpots :: { CFrame }) do
+		local ok, err = pcall(buildVacant, spotIndex)
+		if not ok then
+			warn(("[PlotService] vacant plot %d failed: %s"):format(spotIndex, tostring(err)))
+		end
+	end
 
 	Players.PlayerAdded:Connect(claimPlot)
 	Players.PlayerRemoving:Connect(releasePlot)

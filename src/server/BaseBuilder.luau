@@ -26,7 +26,8 @@ local BaseBuilder = {}
 
 export type BaseShell = {
 	spawnPoint: BasePart,
-	floorTop: number,
+	floorTop: number,        -- ground floor, kept for callers that only need one
+	floorTops: { number },   -- one entry per storey, lowest first
 }
 
 local Palette = Config.Palette :: any
@@ -39,7 +40,12 @@ local HALF_WIDTH = FOOTPRINT.X / 2
 local HALF_DEPTH = FOOTPRINT.Y / 2
 
 local FLOOR_TOP = Config.Base.FloorTop :: number
-local WALL_H = Config.Base.WallHeight :: number
+local FLOORS = math.max(1, Config.Plot.Floors :: number)
+local FLOOR_HEIGHT = Config.Base.FloorHeight :: number
+local SLAB_T = Config.Base.FloorSlabThickness :: number
+-- One storey per floor: the building grows upward rather than the rooms
+-- getting shorter as floors are added.
+local WALL_H = FLOOR_HEIGHT * FLOORS
 local WALL_T = Config.Base.WallThickness :: number
 local TRIM_H = Config.Base.TrimHeight :: number
 local ROOF_T = Config.Base.RoofThickness :: number
@@ -188,6 +194,92 @@ end
 
 -- Floor slab, three walls, the white trim band and front pillars, the warm
 -- orange inner facing on the back wall, and the roof.
+-- Walking surface height of each storey, lowest first. Storey 1 is the base
+-- floor; every one above sits a full FLOOR_HEIGHT higher, on its own slab.
+local FLOOR_TOPS: { number } = {}
+for level = 1, FLOORS do
+	table.insert(FLOOR_TOPS, FLOOR_TOP + (level - 1) * FLOOR_HEIGHT)
+end
+
+local STAIR_W = Config.Base.StairWidth :: number
+local STAIR_STEPS = math.max(2, Config.Base.StairSteps :: number)
+-- The stairwell runs up the left wall; the slab above leaves this much of the
+-- left side open so there is a hole to climb through.
+local STAIR_WELL_DEPTH = 20
+
+-- One flight from `fromTop` up to `toTop`, hugging the left wall at the back.
+-- Steps are plain anchored parts: a character walks up them with no jumping as
+-- long as each riser stays under a stud or so.
+local function buildStairs(model: Model, baseCFrame: CFrame, level: number, fromTop: number, toTop: number)
+	local rise = (toTop - fromTop) / STAIR_STEPS
+	local run = STAIR_WELL_DEPTH / STAIR_STEPS
+	local stairX = -(HALF_WIDTH - WALL_T - STAIR_W / 2)
+	-- Climb from the back of the plot toward the front.
+	local startZ = HALF_DEPTH - WALL_T - run / 2
+
+	for step = 1, STAIR_STEPS do
+		local topY = fromTop + rise * step
+		-- Each step is a solid block from the floor up to its own tread, so
+		-- there is never a gap to fall through between treads.
+		local height = topY - fromTop
+		newPart(
+			model,
+			("Stair%d_%d"):format(level, step),
+			Vector3.new(STAIR_W, height, run),
+			baseCFrame * CFrame.new(stairX, fromTop + height / 2, startZ - (step - 1) * run),
+			step % 2 == 0 and Palette.BaseTrim or Palette.BaseFloor,
+			Enum.Material.SmoothPlastic
+		)
+	end
+
+	-- A low rail along the open side so nobody walks off the flight.
+	newProp(
+		model,
+		("StairRail%d"):format(level),
+		Vector3.new(0.5, 3, STAIR_WELL_DEPTH),
+		baseCFrame * CFrame.new(
+			stairX + STAIR_W / 2,
+			fromTop + (toTop - fromTop) / 2 + 2,
+			startZ - STAIR_WELL_DEPTH / 2 + run / 2
+		),
+		Palette.BaseTrim,
+		Enum.Material.SmoothPlastic
+	)
+end
+
+-- The slab that is storey N's floor and storey N-1's ceiling. It covers the
+-- footprint except the stairwell, which is left open to climb through.
+local function buildFloorSlab(model: Model, baseCFrame: CFrame, level: number, floorTop: number)
+	local slabY = floorTop - SLAB_T / 2
+	local stairSpan = STAIR_W + WALL_T
+	local mainWidth = FOOTPRINT.X - stairSpan
+	-- Main slab: everything to the right of the stairwell.
+	newPart(
+		model,
+		("FloorSlab%d"):format(level),
+		Vector3.new(mainWidth, SLAB_T, FOOTPRINT.Y),
+		baseCFrame * CFrame.new(stairSpan / 2, slabY, 0),
+		Palette.BaseFloor,
+		Enum.Material.SmoothPlastic
+	)
+	-- The strip in front of the stairwell, so only the flight itself is open.
+	local frontDepth = FOOTPRINT.Y - STAIR_WELL_DEPTH - WALL_T
+	if frontDepth > 1 then
+		newPart(
+			model,
+			("FloorSlab%dFront"):format(level),
+			Vector3.new(stairSpan, SLAB_T, frontDepth),
+			baseCFrame * CFrame.new(
+				-(FOOTPRINT.X - stairSpan) / 2,
+				slabY,
+				-(HALF_DEPTH - frontDepth / 2)
+			),
+			Palette.BaseFloor,
+			Enum.Material.SmoothPlastic
+		)
+	end
+end
+
 local function buildShell(model: Model, baseCFrame: CFrame)
 	newPart(
 		model,
@@ -273,16 +365,34 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		Palette.BaseRoof,
 		Enum.Material.SmoothPlastic
 	)
+
+	-- Upper storeys: a floor slab with a stairwell hole, a flight up to it, and
+	-- a trim band on the outside marking the storey line.
+	for level = 2, FLOORS do
+		local floorTop = FLOOR_TOPS[level]
+		buildFloorSlab(model, baseCFrame, level, floorTop)
+		buildStairs(model, baseCFrame, level, FLOOR_TOPS[level - 1], floorTop)
+
+		newProp(
+			model,
+			("StoreyBand%d"):format(level),
+			Vector3.new(FOOTPRINT.X + TRIM_PROUD * 2, TRIM_H, FOOTPRINT.Y + TRIM_PROUD * 2),
+			baseCFrame * CFrame.new(0, floorTop - SLAB_T - TRIM_H / 2, 0),
+			Palette.BaseTrim,
+			Enum.Material.SmoothPlastic
+		)
+	end
 end
 
 -- ----------------------------------------------------------------- windows --
 
 -- A white frame standing proud of the inner wall face around a dark pane that
 -- passes through the wall, so the opening reads from both sides.
-local function buildWindow(model: Model, baseCFrame: CFrame, side: number, localZ: number, label: string)
+local function buildWindow(model: Model, baseCFrame: CFrame, side: number, localZ: number, label: string, floorTop: number)
 	local innerX = side * (HALF_WIDTH - WALL_T)
 	local frameX = innerX - side * (FRAME_PROUD / 2)
-	local centerY = FLOOR_TOP + WINDOW_SILL + WINDOW_H / 2
+	-- Sill is measured from THIS storey's floor, so upper windows sit correctly.
+	local centerY = floorTop + WINDOW_SILL + WINDOW_H / 2
 
 	local barSpan = WINDOW_W + FRAME_BAR * 2
 	for _, vertical in { 1, -1 } do
@@ -318,12 +428,15 @@ local function buildWindow(model: Model, baseCFrame: CFrame, side: number, local
 	pane.Reflectance = 0.1
 end
 
+-- Two windows per side wall, per storey.
 local function buildWindows(model: Model, baseCFrame: CFrame)
 	local offset = HALF_DEPTH * WINDOW_Z_FRACTION
-	for _, side in { -1, 1 } do
-		local sideLabel = side < 0 and "Left" or "Right"
-		for index, localZ in { -offset, offset } do
-			buildWindow(model, baseCFrame, side, localZ, ("%sWindow%d"):format(sideLabel, index))
+	for level = 1, FLOORS do
+		for _, side in { -1, 1 } do
+			local sideLabel = side < 0 and "Left" or "Right"
+			for index, localZ in { -offset, offset } do
+				buildWindow(model, baseCFrame, side, localZ, ("%sWindow%d_%d"):format(sideLabel, level, index), FLOOR_TOPS[level])
+			end
 		end
 	end
 end
@@ -333,18 +446,24 @@ end
 -- Neon panels recessed into the roof's underside, evenly spaced across the
 -- width, each carrying a warm PointLight. This is what makes the interior read
 -- bright against the night sky.
+-- Every storey gets its own row of panels, set into whatever is above it: the
+-- slab of the floor overhead, or the roof for the top storey.
 local function buildCeilingLights(model: Model, baseCFrame: CFrame)
 	if LIGHT_COUNT < 1 then
 		return
 	end
 	local step = FOOTPRINT.X / LIGHT_COUNT
+	for level = 1, FLOORS do
+	local ceilingY = if level < FLOORS
+		then FLOOR_TOPS[level + 1] - SLAB_T
+		else WALL_TOP
 	for index = 1, LIGHT_COUNT do
 		local localX = (index - (LIGHT_COUNT + 1) / 2) * step
 		local panel = newProp(
 			model,
-			"CeilingLight" .. tostring(index),
+			("CeilingLight%d_%d"):format(level, index),
 			Vector3.new(LIGHT_PANEL_SIZE, LIGHT_PANEL_THICKNESS, LIGHT_PANEL_SIZE),
-			baseCFrame * CFrame.new(localX, WALL_TOP - LIGHT_PANEL_THICKNESS / 2, 0),
+			baseCFrame * CFrame.new(localX, ceilingY - LIGHT_PANEL_THICKNESS / 2, 0),
 			WHITE,
 			Enum.Material.Neon
 		)
@@ -355,6 +474,7 @@ local function buildCeilingLights(model: Model, baseCFrame: CFrame)
 		light.Color = LAMP_COLOR
 		light.Shadows = false
 		light.Parent = panel
+	end
 	end
 end
 
@@ -532,30 +652,103 @@ end
 -- The shell and the spawn point are the contract, so they build straight; the
 -- decorative passes are each guarded so one bad prop never costs a player
 -- their base.
-function BaseBuilder.Build(player: Player, model: Model, baseCFrame: CFrame): BaseShell
+-- The sign on an unclaimed base: no avatar, just an invitation.
+local function buildVacantSign(model: Model, baseCFrame: CFrame)
+	local post = newPart(
+		model,
+		"SignPost",
+		Vector3.new(0.6, SIGN_POST_HEIGHT, 0.6),
+		baseCFrame * CFrame.new(
+			-(HALF_WIDTH - SIGN_INSET_X),
+			FLOOR_TOP + SIGN_POST_HEIGHT / 2,
+			-(HALF_DEPTH - SIGN_INSET_Z)
+		),
+		Palette.SignBoard,
+		Enum.Material.SmoothPlastic
+	)
+	post.CanCollide = false
+
+	local board = newProp(
+		model,
+		"SignBoard",
+		SIGN_BOARD_SIZE,
+		baseCFrame
+			* CFrame.new(
+				-(HALF_WIDTH - SIGN_INSET_X),
+				FLOOR_TOP + SIGN_POST_HEIGHT + SIGN_BOARD_SIZE.Y / 2,
+				-(HALF_DEPTH - SIGN_INSET_Z)
+			)
+			* CFrame.Angles(0, SIGN_ANGLE, 0),
+		Palette.SignBoard,
+		Enum.Material.SmoothPlastic
+	)
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "VacantGui"
+	gui.Face = Enum.NormalId.Back
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 50
+	gui.LightInfluence = 0
+	gui.Adornee = board
+	gui.Parent = board
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Position = UDim2.fromScale(0.05, 0.12)
+	title.Size = UDim2.fromScale(0.9, 0.4)
+	title.Font = Enum.Font.FredokaOne
+	title.Text = "PLOT"
+	title.TextScaled = true
+	title.TextColor3 = WHITE
+	title.TextStrokeTransparency = 0.4
+	title.TextStrokeColor3 = BLACK
+	title.Parent = gui
+
+	local subtitle = title:Clone()
+	subtitle.Position = UDim2.fromScale(0.05, 0.5)
+	subtitle.Size = UDim2.fromScale(0.9, 0.36)
+	subtitle.Text = "AVAILABLE"
+	subtitle.TextColor3 = (Palette :: any).Ink or WHITE
+	subtitle.Parent = gui
+end
+
+-- Builds a base. Pass a Player for a claimed plot, or nil for an unclaimed one:
+-- a vacant plot gets the same building (so the street line never has a gap) but
+-- no owner avatar, no floating house marker and a "PLOT AVAILABLE" sign.
+function BaseBuilder.Build(player: Player?, model: Model, baseCFrame: CFrame): BaseShell
+	local who = player and player.Name or "vacant plot"
 	buildShell(model, baseCFrame)
 	local spawnPoint = buildSpawnPoint(model, baseCFrame)
 
 	local ok, err = pcall(buildWindows, model, baseCFrame)
 	if not ok then
-		warn(("[BaseBuilder] windows failed for %s: %s"):format(player.Name, tostring(err)))
+		warn(("[BaseBuilder] windows failed for %s: %s"):format(who, tostring(err)))
 	end
 	ok, err = pcall(buildCeilingLights, model, baseCFrame)
 	if not ok then
-		warn(("[BaseBuilder] ceiling lights failed for %s: %s"):format(player.Name, tostring(err)))
+		warn(("[BaseBuilder] ceiling lights failed for %s: %s"):format(who, tostring(err)))
 	end
-	ok, err = pcall(buildHouseMarker, model, baseCFrame)
-	if not ok then
-		warn(("[BaseBuilder] house marker failed for %s: %s"):format(player.Name, tostring(err)))
-	end
-	ok, err = pcall(buildOwnerSign, model, baseCFrame, player)
-	if not ok then
-		warn(("[BaseBuilder] owner sign failed for %s: %s"):format(player.Name, tostring(err)))
+
+	if player ~= nil then
+		ok, err = pcall(buildHouseMarker, model, baseCFrame)
+		if not ok then
+			warn(("[BaseBuilder] house marker failed for %s: %s"):format(who, tostring(err)))
+		end
+		ok, err = pcall(buildOwnerSign, model, baseCFrame, player)
+		if not ok then
+			warn(("[BaseBuilder] owner sign failed for %s: %s"):format(who, tostring(err)))
+		end
+	else
+		ok, err = pcall(buildVacantSign, model, baseCFrame)
+		if not ok then
+			warn(("[BaseBuilder] vacant sign failed: %s"):format(tostring(err)))
+		end
 	end
 
 	return {
 		spawnPoint = spawnPoint,
 		floorTop = FLOOR_TOP,
+		floorTops = table.clone(FLOOR_TOPS),
 	}
 end
 
