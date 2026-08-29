@@ -347,6 +347,9 @@ Config.Products = {
 	WheelSpins9 = 0,
 	CarryUpgrade = 0,
 	RebirthSkip = 0,
+	-- Pay Robux to take a squishy off another player's plot. Stealing stays
+	-- switched off until this id exists.
+	Steal = 0,
 }
 
 Config.Plot = {

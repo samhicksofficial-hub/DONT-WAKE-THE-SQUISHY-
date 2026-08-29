@@ -35,6 +35,7 @@ services.EnemyService = require(script.EnemyService) :: any
 services.SpawnService = require(script.SpawnService) :: any
 services.EventService = require(script.EventService) :: any
 services.DailyService = require(script.DailyService) :: any
+services.StealService = require(script.StealService) :: any
 
 local map = (require(script.MapBuilder) :: any).Build()
 require(script.LightingService).Apply()
@@ -54,6 +55,8 @@ for _, name in {
 	"SpawnService",
 	"EventService",
 	"DailyService",
+	-- Last: it walks the finished plots to attach its prompts.
+	"StealService",
 } do
 	local ok, err = pcall(function()
 		services[name].Start(services, map)

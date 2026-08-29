@@ -25,6 +25,7 @@ client hides that button, so nothing looks broken in the meantime.
 | `WheelSpins9` | +9 wheel spins | Wheel panel, second Robux button |
 | `CarryUpgrade` | Instantly buy the next Carry level | Upgrades panel, Carry card |
 | `RebirthSkip` | Skip the cash cost of the next rebirth | Rebirth panel, "Skip" button |
+| `Steal` | Take one squishy off another player's plot, keeping its level and variant | "Steal" prompt on other players' placed squishies |
 
 ## 2. Game Passes — one-time perks
 Create at **Monetization → Passes**. These need a `Config.Passes` table (I'll add
@@ -51,6 +52,12 @@ Add Images), then right-click → **Copy ID**. Send the `rbxassetid://…` numbe
 | Stall / machine art | Built from parts | Field props — optional, parts read fine at distance |
 
 Roughly 512×512 PNGs with transparency work best for world icons.
+
+## 3b. Enable DataStores
+Daily-login streaks are the one thing that must survive a session, so they use
+a DataStore. In Studio, tick **Game Settings > Security > Enable Studio Access
+to API Services** or streaks stay session-only while you test (the game still
+runs; it warns once). Nothing to do on a live server.
 
 ## 4. Optional
 - **Published place ID** — lets me test with more than one player (plot claiming,
