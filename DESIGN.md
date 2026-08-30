@@ -406,6 +406,36 @@ tiles, candy pads). Nothing is darker than a soft caramel; text uses
 New BaseBuilder API: `ShellAttributes`, `TagShell(model, spotIndex, floors)`,
 `Adopt(model, floors) -> BaseShell?`, `DressForOwner(model, baseCFrame, player, floors)`.
 
+## Display pedestals
+
+Every slot carries an Ionic column (`buildPedestal`, PlotService). Bottom to
+top it follows the real order: square plinth, torus/scotia/torus base
+mouldings, fluted shaft, then the capital — necking, echinus, two volutes and
+the abacus the squishy stands on.
+
+- **It exists to clear the plaque.** A squishy sitting flat on its platform was
+  hidden behind the upgrade sign in front of it. `PEDESTAL_HEIGHT` (3.05) is
+  what `placeSquishy` adds, and it must stay above the plaque's top edge
+  (`PLAQUE_STAND_OFF + UPGRADE_PLAQUE_SIZE.Y` = 2.75 above the platform).
+- **Everything is decorative**: `CanCollide`, `CanTouch` and `CanQuery` are all
+  off, so a column can never block a player walking onto their own slot.
+- **Cost is 16 parts per slot**, 6 of them flutes. At the 80-slot maximum that
+  is 1,280 parts. `FLUTE_COUNT` is the dial if that ever needs trimming — the
+  flutes are the least legible detail at play distance.
+- Columns stand on locked slots too, so an empty slot reads as a place a
+  squishy belongs rather than a bare tile.
+
+## The upgrade plaque is a print, not a board
+
+The plaque part is `Transparency = 1`. Only the rounded card printed on its
+front face is meant to read; the part's square edges were showing around and
+behind it. The part itself stays for the ClickDetector, the Touched connection
+and as a surface for the SurfaceGui to print on.
+
+Because of that, **showing and hiding the plaque is the SurfaceGui's
+`Enabled`, never the part's `Transparency`** — setting transparency back to 0
+would put the rectangle right back.
+
 ## Icons (`Config.Icons`)
 
 Every icon the game draws is a Roblox asset id, never a file path — a local PNG

@@ -209,6 +209,10 @@ Config.Palette = {
 	HouseBody = Color3.fromRGB(255, 214, 130),    -- butter house
 	HouseRoof = Color3.fromRGB(238, 130, 156),    -- raspberry roof
 	SafeZone = Color3.fromRGB(206, 226, 255),     -- cool pastel blue
+	-- The display pedestals. Warm ivory rather than grey marble, so a Greek
+	-- column still sits inside the candy palette instead of fighting it.
+	PedestalStone = Color3.fromRGB(248, 240, 226),
+	PedestalShade = Color3.fromRGB(226, 210, 186), -- the mouldings, a shade deeper
 	-- Text and outlines. Never pure black: a soft cocoa keeps the world plush
 	-- while still reading clearly on pale boards.
 	Ink = Color3.fromRGB(104, 74, 82),

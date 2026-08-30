@@ -189,6 +189,119 @@ local function newIcon(parent: Instance, image: string, order: number, heightSca
 	return icon
 end
 
+-- ---------------------------------------------------------------- pedestals --
+-- An Ionic column under every squishy, so a placed one stands clear of the
+-- upgrade plaque in front of it instead of hiding behind it.
+--
+-- Read bottom to top, it is the real order of an Ionic order: square plinth,
+-- the torus/scotia/torus base mouldings, a fluted shaft, then the capital —
+-- necking ring, echinus, a pair of volutes and the square abacus the squishy
+-- actually sits on.
+--
+-- Every piece is decorative: nothing collides, touches or answers a raycast, so
+-- a column can never block a player walking onto their own slot.
+
+-- A cylinder part extends along its X axis; this stands one upright.
+local CYLINDER_UPRIGHT = CFrame.Angles(0, 0, math.rad(90))
+-- A volute is a disc seen face-on from the front of the column, so its axis
+-- lies along Z rather than Y.
+local VOLUTE_FACING = CFrame.Angles(0, math.rad(90), 0)
+
+-- Total lift from the platform top to where a squishy stands.
+local PEDESTAL_HEIGHT = 3.05
+-- Fluting is the most expensive part of the column (one thin cylinder each) and
+-- the least legible at play distance. Six reads as fluted without the cost of a
+-- real twenty-four.
+local FLUTE_COUNT = 6
+
+local function newPedestalPart(
+	parent: Instance,
+	name: string,
+	size: Vector3,
+	cf: CFrame,
+	color: Color3,
+	shape: Enum.PartType?
+): Part
+	local part = newPart(parent, name, size, cf, color, Enum.Material.SmoothPlastic)
+	if shape ~= nil then
+		part.Shape = shape
+	end
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CanQuery = false
+	return part
+end
+
+-- `origin` is the centre of the platform's top face.
+local function buildPedestal(parent: Instance, origin: CFrame, index: number)
+	local stone = Palette.PedestalStone
+	local shade = Palette.PedestalShade
+	local tag = tostring(index)
+	local cylinder = Enum.PartType.Cylinder
+
+	local function ring(name: string, diameter: number, thickness: number, y: number, color: Color3)
+		newPedestalPart(
+			parent,
+			name .. tag,
+			Vector3.new(thickness, diameter, diameter),
+			origin * CFrame.new(0, y + thickness / 2, 0) * CYLINDER_UPRIGHT,
+			color,
+			cylinder
+		)
+	end
+
+	-- Base: square plinth, then the round mouldings that sit on it.
+	newPedestalPart(
+		parent,
+		"PedestalPlinth" .. tag,
+		Vector3.new(3, 0.35, 3),
+		origin * CFrame.new(0, 0.175, 0),
+		shade
+	)
+	ring("PedestalTorus", 2.7, 0.3, 0.35, stone)
+	ring("PedestalScotia", 2.2, 0.25, 0.65, shade)
+	ring("PedestalBase", 2.45, 0.22, 0.9, stone)
+
+	-- Shaft, with the flutes standing proud around it.
+	local shaftY = 1.12
+	local shaftH = 1.35
+	ring("PedestalShaft", 1.9, shaftH, shaftY, stone)
+	for flute = 1, FLUTE_COUNT do
+		local angle = (flute - 1) * (math.pi * 2 / FLUTE_COUNT)
+		newPedestalPart(
+			parent,
+			("PedestalFlute%s_%d"):format(tag, flute),
+			Vector3.new(shaftH, 0.26, 0.26),
+			origin
+				* CFrame.new(math.sin(angle) * 0.95, shaftY + shaftH / 2, math.cos(angle) * 0.95)
+				* CYLINDER_UPRIGHT,
+			shade,
+			cylinder
+		)
+	end
+
+	-- Capital: necking, echinus, the two volutes, and the abacus on top.
+	ring("PedestalNeck", 2, 0.16, 2.47, shade)
+	ring("PedestalEchinus", 2.25, 0.2, 2.63, stone)
+	for side, sign in { -1, 1 } do
+		newPedestalPart(
+			parent,
+			("PedestalVolute%s_%d"):format(tag, side),
+			Vector3.new(0.55, 0.85, 0.85),
+			origin * CFrame.new(sign * 0.95, 2.85, 0) * VOLUTE_FACING,
+			stone,
+			cylinder
+		)
+	end
+	newPedestalPart(
+		parent,
+		"PedestalAbacus" .. tag,
+		Vector3.new(2.5, 0.22, 2.5),
+		origin * CFrame.new(0, 2.94, 0),
+		stone
+	)
+end
+
 -- ------------------------------------------------------------------ helpers --
 
 -- True when the touching part belongs to the living character of the owner.
@@ -538,9 +651,9 @@ local function updatePlaqueAffordability(plot: PlotRecord, slot: SlotRecord)
 	local money = tonumber(plot.player:GetAttribute("Money")) or 0
 	local affordable = cost ~= nil and money >= cost
 
+	-- Only the printed card is visible now (the board behind it is transparent),
+	-- so the card and its arrow carry the whole affordable/not state.
 	card.BackgroundColor3 = affordable and PLAQUE_YELLOW or PLAQUE_GREY
-	-- The board part shows at the card's edges and back, so it greys too.
-	pad.Color = affordable and PLAQUE_YELLOW or PLAQUE_GREY
 	local arrow = slot.upgradeArrow
 	if arrow ~= nil then
 		arrow.ImageColor3 = affordable and PLAQUE_ARROW or PLAQUE_ARROW_GREY
@@ -648,6 +761,12 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 			Enum.Material.SmoothPlastic
 		)
 		pad.CanCollide = false
+		-- The board itself is invisible: only the rounded card printed on its
+		-- front should read, and the part's square edges were showing around
+		-- and behind it. A SurfaceGui still draws on a fully transparent part,
+		-- and the part stays for the ClickDetector and the surface to print on.
+		pad.Transparency = 1
+		pad.CastShadow = false
 		local price, step, arrow, card = buildUpgradePlaque(pad)
 		slot.upgradeLabel = price
 		slot.upgradeStepLabel = step
@@ -668,7 +787,8 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 			onUpgradeTouched(plot, slot, hitPart)
 		end))
 	end
-	pad.Transparency = 0
+	-- The board stays invisible; only the printed card is ever meant to show,
+	-- so showing and hiding is the SurfaceGui's job now, not the part's.
 	pad.CanTouch = true
 	local gui = pad:FindFirstChild("UpgradeGui")
 	if gui ~= nil and gui:IsA("SurfaceGui") then
@@ -690,7 +810,10 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	model:SetAttribute("State", "Placed")
 	model.Parent = plot.model
 	local height = SquishyFactory.bodyHeight(def.name)
-	model:PivotTo(slot.platform.CFrame * CFrame.new(0, slot.platform.Size.Y / 2 + height / 2, 0))
+	-- Stands on the pedestal's abacus, not the platform itself.
+	model:PivotTo(
+		slot.platform.CFrame * CFrame.new(0, slot.platform.Size.Y / 2 + PEDESTAL_HEIGHT + height / 2, 0)
+	)
 	slot.occupied = true
 	slot.pending = 0
 	slot.level = 1
@@ -1096,6 +1219,14 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 				* CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
 			unlocked and Palette.SlotPlatform or Palette.SlotBorder,
 			Enum.Material.SmoothPlastic
+		)
+		-- The column stands on every slot, taken or not: an empty one reads as
+		-- a place a squishy belongs rather than a bare tile.
+		pcall(
+			buildPedestal,
+			model,
+			baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, localZ),
+			index
 		)
 		local slot: SlotRecord = {
 			index = index,
@@ -1550,7 +1681,6 @@ function PlotService.StealSquishy(model: Model, thief: Player): boolean
 	victimSlot.level = 1
 	local pad = victimSlot.upgradePad
 	if pad ~= nil then
-		pad.Transparency = 1
 		pad.CanTouch = false
 		local gui = pad:FindFirstChild("UpgradeGui")
 		if gui ~= nil and gui:IsA("SurfaceGui") then

@@ -822,13 +822,15 @@ local function stripSurfaceArt(part: BasePart)
 	end
 end
 
-local function applyVariant(model: Model, variantName: string?)
+-- Returns true when it stripped surface art, so the caller knows a baked-on
+-- face went with it and can put a billboard one back.
+local function applyVariant(model: Model, variantName: string?): boolean
 	if variantName == nil or variantName == "Normal" then
-		return
+		return false
 	end
 	local variant = (Config :: any).VariantByName[variantName]
 	if variant == nil or variant.effect == "none" then
-		return
+		return false
 	end
 
 	local visuals: { BasePart } = {}
@@ -846,6 +848,7 @@ local function applyVariant(model: Model, variantName: string?)
 			part.Material = Enum.Material.Metal
 			part.Reflectance = 0.35
 		end
+		return true
 	elseif variant.effect == "rainbow" then
 		for _, part in visuals do
 			stripSurfaceArt(part)
@@ -853,7 +856,9 @@ local function applyVariant(model: Model, variantName: string?)
 			table.insert(rainbowParts, part)
 		end
 		startRainbowLoop()
+		return true
 	end
+	return false
 end
 
 function SquishyModels.build(spec: BuildSpec): (Model, number)
@@ -895,7 +900,16 @@ function SquishyModels.build(spec: BuildSpec): (Model, number)
 	end
 
 	local model, height = finalize(rig, footprint)
-	applyVariant(model, spec.variant)
+	local stripped = applyVariant(model, spec.variant)
+
+	-- A variant coat has to remove the mesh texture to be visible at all, and
+	-- on the dumplings that texture is where the face is painted. Without this
+	-- a Gold dumpling comes out as a blank gold blob. The billboard face is the
+	-- same one the part-built dumplings already wear, so it matches.
+	if stripped and textureFace and FACE_SHAPES[shapeKey] == true then
+		attachFace(primaryPart, sparkle, footprint)
+	end
+
 	return model, height
 end
 
