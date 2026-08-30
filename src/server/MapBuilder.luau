@@ -24,6 +24,7 @@ local MapBuilder = {}
 
 export type Map = {
 	root: Folder,
+	safeZones: { BasePart },
 	squishyFolder: Folder,
 	enemyFolder: Folder,
 	plotFolder: Folder,
@@ -656,6 +657,20 @@ function MapBuilder.Build(): Map
 		plotSpots = markerSpots
 	end
 
+	-- The safe-zone strips SquishyService polls to lift the carry penalty.
+	-- Resolved from `root`, never from `buildRoot`: on a hand-edited map the
+	-- generated ones live in the scratch folder that is about to be destroyed,
+	-- and the real strips are the saved ones the owner may have moved.
+	local safeZones: { BasePart } = {}
+	local savedZones = root:FindFirstChild("SafeZones")
+	if savedZones ~= nil then
+		for _, strip in savedZones:GetChildren() do
+			if strip:IsA("BasePart") then
+				table.insert(safeZones, strip)
+			end
+		end
+	end
+
 	-- Throw the generated geometry away on a hand-edited map: it only existed
 	-- so the computation above could run against real numbers.
 	if handEdited then
@@ -664,6 +679,7 @@ function MapBuilder.Build(): Map
 
 	return {
 		root = root,
+		safeZones = safeZones,
 		squishyFolder = squishyFolder,
 		enemyFolder = enemyFolder,
 		plotFolder = plotFolder,

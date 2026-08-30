@@ -102,6 +102,8 @@ type SlotRecord = {
 	collectPad: BasePart?,
 	collectLabel: TextLabel?,
 	unlockPad: BasePart?,
+	placePrompt: ProximityPrompt?,
+	pedestalTop: BasePart?,
 	unlockGui: BillboardGui?,
 }
 
@@ -232,8 +234,10 @@ local function newPedestalPart(
 	return part
 end
 
--- `origin` is the centre of the platform's top face.
-local function buildPedestal(parent: Instance, origin: CFrame, index: number)
+-- `origin` is the centre of the platform's top face. Returns the abacus — the
+-- slab on top — because that is where the squishy stands and so where the
+-- "hold E to place" prompt belongs.
+local function buildPedestal(parent: Instance, origin: CFrame, index: number): BasePart
 	local stone = Palette.PedestalStone
 	local shade = Palette.PedestalShade
 	local tag = tostring(index)
@@ -293,13 +297,65 @@ local function buildPedestal(parent: Instance, origin: CFrame, index: number)
 			cylinder
 		)
 	end
-	newPedestalPart(
+	return newPedestalPart(
 		parent,
 		"PedestalAbacus" .. tag,
 		Vector3.new(2.5, 0.22, 2.5),
 		origin * CFrame.new(0, 2.94, 0),
 		stone
 	)
+end
+
+-- ------------------------------------------------------------ slot layout --
+-- Where slot N sits inside a base. Shared by the runtime build and by
+-- PlotService.BuildSlotFurniture (which the plot tool calls), so the saved
+-- shells and the live plots can never drift apart on positioning.
+
+export type SlotLayout = {
+	floorTop: number,
+	localX: number,
+	localZ: number,
+	slotOnFloor: number,
+	isGroundFloor: boolean,
+}
+
+local function slotLayout(index: number, floorTops: { number }, groundIndex: number, fallbackTop: number): SlotLayout
+	local slotsPerRow = Config.Plot.SlotsPerRow :: number
+	local rowsPerFloor = math.max(1, Config.Plot.RowsPerFloor :: number)
+	local slotsPerFloor = slotsPerRow * rowsPerFloor
+
+	local floorIndex = math.floor((index - 1) / slotsPerFloor)
+	local withinFloor = (index - 1) % slotsPerFloor
+	local row = math.floor(withinFloor / slotsPerRow)
+	local col = withinFloor % slotsPerRow
+	return {
+		floorTop = floorTops[floorIndex + 1] or fallbackTop,
+		localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING + (row == 0 and FRONT_ROW_STAGGER or 0),
+		localZ = FRONT_ROW_Z + row * ROW_DEPTH,
+		slotOnFloor = withinFloor + 1,
+		isGroundFloor = (floorIndex + 1) == groundIndex,
+	}
+end
+
+-- A part already sitting in the model under this name — furniture inherited
+-- from a hand-edited shell. Reused rather than rebuilt, so what the owner saved
+-- (and moved) is what the plot actually gets.
+local function existingPart(parent: Instance, name: string): BasePart?
+	local found = parent:FindFirstChild(name)
+	if found ~= nil and found:IsA("BasePart") then
+		return found
+	end
+	return nil
+end
+
+-- The "hold E to place" prompt only offers itself on a slot that could actually
+-- take a squishy. Carrying is per-player and a prompt is one shared instance,
+-- so that half is enforced in the handler instead.
+local function refreshPlacePrompt(slot: SlotRecord)
+	local prompt = slot.placePrompt
+	if prompt ~= nil then
+		prompt.Enabled = slot.unlocked and not slot.occupied
+	end
 end
 
 -- ------------------------------------------------------------------ helpers --
@@ -393,15 +449,18 @@ local function onCollectTouched(plot: PlotRecord, slot: SlotRecord, hitPart: Bas
 	updateCollectLabel(plot, slot)
 end
 
-local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
-	local cf = plot.baseCFrame
-		* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+-- Builds just the collect pad's geometry — the green disc and the darker rim
+-- under it. Split out so the plot tool can put the same discs into a saved
+-- shell, where the owner can see and move them.
+local function buildCollectPadGeometry(parent: Instance, baseCFrame: CFrame, index: number, layoutFloorTop: number, localX: number, localZ: number): BasePart
+	local cf = baseCFrame
+		* CFrame.new(localX, layoutFloorTop + PAD_LIFT + PAD_THICKNESS / 2, localZ - PAD_FORWARD)
 		* PAD_UPRIGHT
 	-- Matte, not Neon: a neon pad blows out to white and loses the green
 	-- entirely, which is what made these read as pale discs.
 	local pad = newPart(
-		plot.model,
-		"CollectPad" .. tostring(slot.index),
+		parent,
+		"CollectPad" .. tostring(index),
 		Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER),
 		cf,
 		Palette.CollectPad,
@@ -415,8 +474,8 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 		pad,
 		"Rim",
 		Vector3.new(PAD_RIM_THICKNESS, PAD_DIAMETER + PAD_RIM_EXTRA, PAD_DIAMETER + PAD_RIM_EXTRA),
-		plot.baseCFrame
-			* CFrame.new(slot.localX, slot.floorTop + PAD_RIM_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+		baseCFrame
+			* CFrame.new(localX, layoutFloorTop + PAD_RIM_THICKNESS / 2, localZ - PAD_FORWARD)
 			* PAD_UPRIGHT,
 		Palette.SlotBorder,
 		Enum.Material.SmoothPlastic
@@ -425,16 +484,33 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	rim.CanCollide = false
 	rim.CanTouch = false
 	rim.CanQuery = false
-	-- The amount is PRINTED ON the pad, not floating over it: an upright
-	-- cylinder's flat top is its +X face, so Right is the face pointing up.
-	local gui = Instance.new("SurfaceGui")
-	gui.Name = "PendingGui"
-	gui.Face = Enum.NormalId.Right
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 64
-	gui.LightInfluence = 0
-	gui.Adornee = pad
-	gui.Parent = pad
+	return pad
+end
+
+-- The money readout printed on a pad's face. Find-or-create, because a pad
+-- inherited from a saved shell already carries one.
+local function ensurePendingLabel(pad: BasePart): TextLabel
+	local gui = pad:FindFirstChild("PendingGui")
+	if gui == nil or not gui:IsA("SurfaceGui") then
+		-- The amount is PRINTED ON the pad, not floating over it: an upright
+		-- cylinder's flat top is its +X face, so Right is the face pointing up.
+		local created = Instance.new("SurfaceGui")
+		created.Name = "PendingGui"
+		created.Face = Enum.NormalId.Right
+		created.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+		created.PixelsPerStud = 64
+		created.LightInfluence = 0
+		created.Adornee = pad
+		created.Parent = pad
+		gui = created
+	end
+	local surface = gui :: SurfaceGui
+	surface.Enabled = true
+
+	local existing = surface:FindFirstChild("Amount")
+	if existing ~= nil and existing:IsA("TextLabel") then
+		return existing
+	end
 
 	local amount = Instance.new("TextLabel")
 	amount.Name = "Amount"
@@ -448,10 +524,29 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	amount.TextColor3 = COLOR_WHITE
 	amount.TextStrokeTransparency = 0
 	amount.TextStrokeColor3 = Color3.new(0, 0, 0)
-	amount.Parent = gui
+	amount.Parent = surface
+	return amount
+end
+
+local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
+	-- A pad inherited from a hand-edited shell is reused where it stands; only
+	-- a plot without one builds a fresh disc.
+	local pad = existingPart(plot.model, "CollectPad" .. tostring(slot.index))
+	if pad == nil then
+		pad = buildCollectPadGeometry(plot.model, plot.baseCFrame, slot.index, slot.floorTop, slot.localX, slot.localZ)
+	else
+		-- Locked slots park their inherited pad out of sight (see the slot
+		-- loop); unlocking brings it back.
+		pad.Transparency = 0
+		pad.CanTouch = true
+		local rim = pad:FindFirstChild("Rim")
+		if rim ~= nil and rim:IsA("BasePart") then
+			rim.Transparency = 0
+		end
+	end
 
 	slot.collectPad = pad
-	slot.collectLabel = amount
+	slot.collectLabel = ensurePendingLabel(pad)
 	updateCollectLabel(plot, slot)
 	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
 		onCollectTouched(plot, slot, hitPart)
@@ -474,6 +569,7 @@ end
 
 local function unlockSlot(plot: PlotRecord, slot: SlotRecord)
 	slot.unlocked = true
+	refreshPlacePrompt(slot)
 	local pad = slot.unlockPad
 	if pad ~= nil then
 		pad:Destroy()
@@ -727,13 +823,6 @@ local function tryUpgrade(plot: PlotRecord, slot: SlotRecord, buyer: Player)
 	refreshSlotLevel(plot, slot)
 end
 
-local function onUpgradeTouched(plot: PlotRecord, slot: SlotRecord, hitPart: BasePart)
-	if not isOwnerTouch(plot, hitPart) then
-		return
-	end
-	tryUpgrade(plot, slot, plot.player)
-end
-
 -- The yellow "upgrade" step in front of an occupied slot. Built once per slot
 -- and then only shown/hidden, so a redeposit never stacks pads.
 local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
@@ -782,14 +871,12 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 		table.insert(plot.connections, click.MouseClick:Connect(function(clicker: Player)
 			tryUpgrade(plot, slot, clicker)
 		end))
-
-		table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
-			onUpgradeTouched(plot, slot, hitPart)
-		end))
 	end
 	-- The board stays invisible; only the printed card is ever meant to show,
 	-- so showing and hiding is the SurfaceGui's job now, not the part's.
-	pad.CanTouch = true
+	-- CanTouch stays off: the plaque is deliberately click-only, so brushing
+	-- past a slot can never buy a level by accident.
+	pad.CanTouch = false
 	local gui = pad:FindFirstChild("UpgradeGui")
 	if gui ~= nil and gui:IsA("SurfaceGui") then
 		gui.Enabled = true
@@ -815,6 +902,7 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 		slot.platform.CFrame * CFrame.new(0, slot.platform.Size.Y / 2 + PEDESTAL_HEIGHT + height / 2, 0)
 	)
 	slot.occupied = true
+	refreshPlacePrompt(slot)
 	slot.pending = 0
 	slot.level = 1
 	slot.rarity = (model:GetAttribute("Rarity") :: string?) or "Common"
@@ -842,6 +930,10 @@ local function flashDepositPad(plot: PlotRecord)
 	end)
 end
 
+-- Walking onto the deposit pad no longer places anything: which pedestal a
+-- squishy goes on is the player's choice now, made by holding E at the one they
+-- want. The pad still flashes when you cross it carrying, so the old habit gets
+-- an answer ("not here") instead of silence.
 local function onDepositTouched(plot: PlotRecord, hitPart: BasePart)
 	if not isOwnerTouch(plot, hitPart) then
 		return
@@ -851,22 +943,52 @@ local function onDepositTouched(plot: PlotRecord, hitPart: BasePart)
 		return
 	end
 	plot.lastDepositTouch = now
-	local slot = findFreeSlot(plot)
-	if slot == nil then
-		-- Rule 2: all unlocked slots full -> refuse, leave the player carrying.
-		if servicesRef.SquishyService.IsCarrying(plot.player) then
-			flashDepositPad(plot)
-		end
+	if servicesRef.SquishyService.IsCarrying(plot.player) then
+		flashDepositPad(plot)
+	end
+end
+
+-- ------------------------------------------------------------- placing --
+
+-- Hold E at a pedestal to stand the carried squishy on that one.
+local function onPlacePrompt(plot: PlotRecord, slot: SlotRecord, player: Player)
+	if player ~= plot.player then
+		return -- only the owner fills their own slots
+	end
+	if not slot.unlocked or slot.occupied then
 		return
 	end
-	local def = servicesRef.SquishyService.TakeCarriedDef(plot.player)
+	local def = servicesRef.SquishyService.TakeCarriedDef(player)
 	if def == nil then
-		return
+		return -- not carrying anything
 	end
 	local ok, err = pcall(placeSquishy, plot, slot, def)
 	if not ok then
-		warn(("[PlotService] failed to place squishy for %s: %s"):format(plot.player.Name, tostring(err)))
+		warn(("[PlotService] failed to place squishy for %s: %s"):format(player.Name, tostring(err)))
 	end
+end
+
+-- The prompt that puts a carried squishy on THIS pedestal. Lives on the abacus
+-- so it reads at the height the squishy will stand, not down at floor level.
+local function createPlacePrompt(plot: PlotRecord, slot: SlotRecord)
+	local anchor = slot.pedestalTop or slot.platform
+	if anchor == nil then
+		return
+	end
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "PlacePrompt"
+	prompt.ActionText = "Place"
+	prompt.ObjectText = "Pedestal"
+	prompt.HoldDuration = 0.35
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = anchor
+	slot.placePrompt = prompt
+	refreshPlacePrompt(slot)
+
+	table.insert(plot.connections, prompt.Triggered:Connect(function(player: Player)
+		onPlacePrompt(plot, slot, player)
+	end))
 end
 
 -- ------------------------------------------------------------------- shell --
@@ -1180,60 +1302,87 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	-- BOUGHT arrives with all ten already open.
 	local totalSlots = slotsPerFloor * #floorTops
 	for index = 1, totalSlots do
-		local floorIndex = math.floor((index - 1) / slotsPerFloor)
-		local withinFloor = (index - 1) % slotsPerFloor
-		local row = math.floor(withinFloor / slotsPerRow)
-		local col = withinFloor % slotsPerRow
-		local slotFloorTop = floorTops[floorIndex + 1] or floorTop
-		local isGroundFloor = (floorIndex + 1) == groundIndex
-		local localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING
-			+ (row == 0 and FRONT_ROW_STAGGER or 0)
-		local localZ = FRONT_ROW_Z + row * ROW_DEPTH
+		local layout = slotLayout(index, floorTops, groundIndex, floorTop)
+		local slotFloorTop = layout.floorTop
+		local localX = layout.localX
+		local localZ = layout.localZ
 		-- Ground floor: the usual staged unlock. Any other floor was paid for
 		-- as a whole, so every slot on it is open from the moment it exists.
-		local unlocked = if isGroundFloor
-			then withinFloor < (Config.Plot.StartUnlocked :: number)
+		local unlocked = if layout.isGroundFloor
+			then layout.slotOnFloor <= (Config.Plot.StartUnlocked :: number)
 			else true
 		-- Each slot reads as a tile: a darker border slab flat on the floor with
-		-- the grey platform sitting on top of it.
-		local border = newPart(
-			model,
-			"SlotBorder" .. tostring(index),
-			Vector3.new(
-				PLATFORM_SIZE.X + PLATFORM_BORDER_OVERHANG,
-				PLATFORM_BORDER_THICKNESS,
-				PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
-			),
-			baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS / 2, localZ),
-			Palette.SlotBorder,
-			Enum.Material.SmoothPlastic
-		)
+		-- the grey platform sitting on top of it. All three pieces are reused
+		-- when they came in on a hand-edited shell, so what the owner saved is
+		-- what the plot gets.
+		local border = existingPart(model, "SlotBorder" .. tostring(index))
+			or newPart(
+				model,
+				"SlotBorder" .. tostring(index),
+				Vector3.new(
+					PLATFORM_SIZE.X + PLATFORM_BORDER_OVERHANG,
+					PLATFORM_BORDER_THICKNESS,
+					PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
+				),
+				baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS / 2, localZ),
+				Palette.SlotBorder,
+				Enum.Material.SmoothPlastic
+			)
 		border.CanCollide = false
 		border.CanTouch = false
 		border.CanQuery = false
-		local platform = newPart(
-			model,
-			"SlotPlatform" .. tostring(index),
-			PLATFORM_SIZE,
-			baseCFrame
-				* CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
-			unlocked and Palette.SlotPlatform or Palette.SlotBorder,
-			Enum.Material.SmoothPlastic
-		)
+		local platform = existingPart(model, "SlotPlatform" .. tostring(index))
+			or newPart(
+				model,
+				"SlotPlatform" .. tostring(index),
+				PLATFORM_SIZE,
+				baseCFrame
+					* CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
+				Palette.SlotPlatform,
+				Enum.Material.SmoothPlastic
+			)
+		-- Colour always comes from code, edited shell or not: it is how a locked
+		-- slot is told apart from an open one, which is gameplay, not decoration.
+		platform.Color = unlocked and Palette.SlotPlatform or Palette.SlotBorder
+
 		-- The column stands on every slot, taken or not: an empty one reads as
 		-- a place a squishy belongs rather than a bare tile.
-		pcall(
-			buildPedestal,
-			model,
-			baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, localZ),
-			index
-		)
+		local pedestalTop: BasePart? = existingPart(model, "PedestalAbacus" .. tostring(index))
+		if pedestalTop == nil then
+			local built, top = pcall(
+				buildPedestal,
+				model,
+				baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, localZ),
+				index
+			)
+			pedestalTop = if built then top else nil
+		end
+
+		-- A pad inherited for a slot that is still locked is parked out of
+		-- sight rather than deleted: deleting would lose the owner's edit, and
+		-- createCollectPad brings this one back the moment the slot opens.
+		if not unlocked then
+			local inherited = existingPart(model, "CollectPad" .. tostring(index))
+			if inherited ~= nil then
+				inherited.Transparency = 1
+				inherited.CanTouch = false
+				local rim = inherited:FindFirstChild("Rim")
+				if rim ~= nil and rim:IsA("BasePart") then
+					rim.Transparency = 1
+				end
+				local gui = inherited:FindFirstChild("PendingGui")
+				if gui ~= nil and gui:IsA("SurfaceGui") then
+					gui.Enabled = false
+				end
+			end
+		end
+
 		local slot: SlotRecord = {
 			index = index,
 			localX = localX,
 			localZ = localZ,
 			floorTop = slotFloorTop,
-			slotOnFloor = withinFloor + 1,
+			slotOnFloor = layout.slotOnFloor,
 			unlocked = unlocked,
 			occupied = false,
 			income = 0,
@@ -1254,8 +1403,11 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			collectLabel = nil,
 			unlockPad = nil,
 			unlockGui = nil,
+			placePrompt = nil,
+			pedestalTop = pedestalTop,
 		}
 		plot.slots[index] = slot
+		createPlacePrompt(plot, slot)
 		if unlocked then
 			createCollectPad(plot, slot)
 		else
@@ -1381,6 +1533,7 @@ local function rebuildPlot(player: Player)
 	for _, slot in fresh.slots do
 		if slot.slotOnFloor <= groundUnlocks then
 			slot.unlocked = true
+			refreshPlacePrompt(slot)
 		end
 	end
 	local index = 1
@@ -1675,6 +1828,7 @@ function PlotService.StealSquishy(model: Model, thief: Player): boolean
 	end
 	victimSlot.squishy = nil
 	victimSlot.occupied = false
+	refreshPlacePrompt(victimSlot)
 	victimSlot.pending = 0
 	victimSlot.income = 0
 	victimSlot.baseIncome = 0
@@ -1709,6 +1863,69 @@ function PlotService.TryPlaceSquishy(player: Player, def: any): boolean
 		return false
 	end
 	return true
+end
+
+-- Builds the static slot furniture for one base — tile borders, platforms,
+-- pedestals and collect-pad discs — with no handlers and no state.
+--
+-- This is what tools/build_plots_in_studio.luau calls so a saved shell contains
+-- the collectors and pillars, not just the building. At run time the slot loop
+-- finds these by name and reuses them, so moving a pedestal in Studio moves it
+-- in the live game.
+--
+-- Every slot gets a pad here, including ones that will start locked: the shell
+-- has no idea whose plot it will become, and a locked slot's pad is hidden at
+-- run time rather than deleted.
+function PlotService.BuildSlotFurniture(model: Model, baseCFrame: CFrame, floorTops: { number }, groundIndex: number)
+	local slotsPerRow = Config.Plot.SlotsPerRow :: number
+	local rowsPerFloor = math.max(1, Config.Plot.RowsPerFloor :: number)
+	local slotsPerFloor = slotsPerRow * rowsPerFloor
+	local fallbackTop = floorTops[groundIndex] or DEFAULT_FLOOR_TOP
+
+	for index = 1, slotsPerFloor * #floorTops do
+		local layout = slotLayout(index, floorTops, groundIndex, fallbackTop)
+		local tag = tostring(index)
+
+		local border = newPart(
+			model,
+			"SlotBorder" .. tag,
+			Vector3.new(
+				PLATFORM_SIZE.X + PLATFORM_BORDER_OVERHANG,
+				PLATFORM_BORDER_THICKNESS,
+				PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
+			),
+			baseCFrame * CFrame.new(layout.localX, layout.floorTop + PLATFORM_BORDER_THICKNESS / 2, layout.localZ),
+			Palette.SlotBorder,
+			Enum.Material.SmoothPlastic
+		)
+		border.CanCollide = false
+		border.CanTouch = false
+		border.CanQuery = false
+
+		newPart(
+			model,
+			"SlotPlatform" .. tag,
+			PLATFORM_SIZE,
+			baseCFrame
+				* CFrame.new(
+					layout.localX,
+					layout.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2,
+					layout.localZ
+				),
+			Palette.SlotPlatform,
+			Enum.Material.SmoothPlastic
+		)
+
+		buildPedestal(
+			model,
+			baseCFrame
+				* CFrame.new(layout.localX, layout.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, layout.localZ),
+			index
+		)
+
+		local pad = buildCollectPadGeometry(model, baseCFrame, index, layout.floorTop, layout.localX, layout.localZ)
+		ensurePendingLabel(pad)
+	end
 end
 
 return PlotService

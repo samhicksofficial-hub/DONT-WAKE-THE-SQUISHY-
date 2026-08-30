@@ -99,18 +99,85 @@ local function applySpeed(player: Player)
 	end
 	local speed = baseSpeed(player)
 	local held = carrying[player]
-	if held ~= nil then
+	-- A safe zone lifts the carry penalty entirely: the strip outside your base
+	-- is where the chase is meant to end, so the last stretch home is walked at
+	-- full speed however heavy the squishy is.
+	local safe = player:GetAttribute("InSafeZone") == true
+	if held ~= nil and not safe then
 		-- Recompute rather than reading the attribute back: buying the Carry
 		-- upgrade mid-carry must lighten the squishy already on your head.
 		local rarityMult = tonumber(held.model:GetAttribute("SpeedMult")) or 1
 		local mult = carryPenalty(player, rarityMult)
 		player:SetAttribute("CarrySpeedMult", mult)
 		speed *= mult
+	elseif held ~= nil then
+		-- Still carrying, but unslowed. The HUD reads this attribute to show
+		-- the drag, so it has to say "no drag" rather than go stale at the
+		-- value it had on the way in.
+		player:SetAttribute("CarrySpeedMult", 1)
 	end
 	humanoid.WalkSpeed = speed
 end
 
 SquishyService.ApplySpeed = applySpeed
+
+-- ------------------------------------------------------------- safe zones --
+-- Standing on a safe-zone strip lifts the carry penalty (see applySpeed).
+--
+-- Polled rather than driven by Touched: the strips are thin decorative slabs
+-- and Touched/TouchEnded on a part you are standing still on is famously
+-- unreliable, which would leave a player stuck slow (or stuck fast) on the one
+-- stretch where it matters most. Eight strips against a handful of players a
+-- few times a second is nothing.
+
+local SAFE_ZONE_POLL = 0.25
+-- Generous vertical slack: the strips are 0.08 studs thick and the character's
+-- root sits a few studs above whatever it stands on.
+local SAFE_ZONE_HEIGHT = 8
+
+local function isInSafeZone(position: Vector3): boolean
+	local zones = mapRef ~= nil and mapRef.safeZones
+	if zones == nil then
+		return false
+	end
+	for _, strip in zones do
+		if strip.Parent ~= nil then
+			-- Into the strip's own space, so a rotated strip still tests as a box.
+			local local_ = strip.CFrame:PointToObjectSpace(position)
+			local half = strip.Size * 0.5
+			if
+				math.abs(local_.X) <= half.X
+				and math.abs(local_.Z) <= half.Z
+				and local_.Y >= -SAFE_ZONE_HEIGHT
+				and local_.Y <= SAFE_ZONE_HEIGHT
+			then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function startSafeZoneLoop()
+	task.spawn(function()
+		while true do
+			task.wait(SAFE_ZONE_POLL)
+			for _, player in Players:GetPlayers() do
+				local character = player.Character
+				local root = character and character:FindFirstChild("HumanoidRootPart")
+				if root ~= nil and root:IsA("BasePart") then
+					local safe = isInSafeZone(root.Position)
+					-- Only touch WalkSpeed on a change, so this never fights the
+					-- other things that write speed every frame.
+					if (player:GetAttribute("InSafeZone") == true) ~= safe then
+						player:SetAttribute("InSafeZone", safe)
+						pcall(applySpeed, player)
+					end
+				end
+			end
+		end
+	end)
+end
 
 -- Clears carry attributes and takes WalkSpeed back to base.
 local function restorePlayer(player: Player)
@@ -443,6 +510,8 @@ function SquishyService.Start(services: any, map: any)
 			task.spawn(onCharacterAdded, player, existing)
 		end
 	end
+
+	startSafeZoneLoop()
 
 	Players.PlayerAdded:Connect(watchPlayer)
 	for _, player in Players:GetPlayers() do

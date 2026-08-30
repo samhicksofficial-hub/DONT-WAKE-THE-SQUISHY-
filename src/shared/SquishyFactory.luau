@@ -10,8 +10,10 @@
 --     Body (invisible anchored box sized to the visual; from SquishyModels)
 --       ProximityPrompt "PickupPrompt" (hold to pick up; enabled)
 --       BillboardGui "Info" (name / rarity / $s labels, always on)
---       BillboardGui "Zzz" ("Zzz" label; server toggles Enabled by State)
 --     ...visual parts welded to Body (massless, no collide/touch/query)
+--
+-- No "Zzz" billboard: a whole field of them was clutter. The giants keep theirs
+-- (EnemyService builds its own), where it is the tell that actually matters.
 --
 -- Attributes on the Model: SquishyName, Rarity, Income, SpeedMult, Scale,
 -- BodyHeight, State ("Sleeping" on creation).
@@ -95,16 +97,13 @@ function SquishyFactory.create(squishyName: string, variantName: string?): Model
 	makeLabel(info, rarityText, rarity.color, 18, 2)
 	makeLabel(info, Util.formatMoney(income) .. "/s", Color3.fromRGB(85, 255, 85), 18, 3)
 
-	-- Zzz billboard, shown while sleeping.
-	local zzz = Instance.new("BillboardGui")
-	zzz.Name = "Zzz"
-	zzz.Size = UDim2.fromScale(3, 2)
-	zzz.StudsOffsetWorldSpace = Vector3.new(halfY * 0.5, halfY + 0.8, 0)
-	zzz.AlwaysOnTop = false
-	zzz.MaxDistance = 70
-	zzz.Enabled = true
-	zzz.Parent = body
-	makeLabel(zzz, "Zzz", Color3.fromRGB(160, 200, 255), 24, 1)
+	-- No Zzz on a field squishy. A field of them put a "Zzz" over every single
+	-- one, which read as clutter rather than atmosphere; the giants keep theirs
+	-- (EnemyService builds its own), where it is the tell that matters — it is
+	-- how you know one has not woken up yet.
+	--
+	-- SquishyService still toggles a "Zzz" by name on pickup and re-drop, and
+	-- both sites are nil-guarded, so nothing needs changing there.
 
 	-- Pickup prompt.
 	local prompt = Instance.new("ProximityPrompt")

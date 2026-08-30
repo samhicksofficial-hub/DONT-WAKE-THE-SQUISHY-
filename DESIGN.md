@@ -406,6 +406,47 @@ tiles, candy pads). Nothing is darker than a soft caramel; text uses
 New BaseBuilder API: `ShellAttributes`, `TagShell(model, spotIndex, floors)`,
 `Adopt(model, floors) -> BaseShell?`, `DressForOwner(model, baseCFrame, player, floors)`.
 
+## Placing, and what pads no longer do
+
+A carried squishy is placed by **holding E at the pedestal you want**, not by
+walking over the deposit pad. The prompt lives on the pedestal's abacus, is
+enabled only while its slot is unlocked and empty, and checks ownership and
+carrying in its handler (a ProximityPrompt is one shared instance, so per-player
+state cannot gate `Enabled`).
+
+`refreshPlacePrompt` must be called anywhere a slot's `unlocked` or `occupied`
+changes — placing, unlocking, rebuilding after a floor purchase, and being
+stolen from. Missing one leaves a prompt that offers a slot it cannot fill.
+
+The deposit pad no longer places anything. It still flashes when crossed while
+carrying, so the old habit gets an answer rather than silence.
+
+The upgrade plaque is **click-only**: `CanTouch` is false and there is no
+Touched connection, so brushing past a slot can never buy a level by accident.
+
+## Safe zones lift the carry penalty
+
+`SquishyService` polls the strips in `map.safeZones` at 4 Hz and sets the
+`InSafeZone` attribute; `applySpeed` skips the carry multiplier while it is
+true, and writes `CarrySpeedMult = 1` so the HUD reads "no drag" instead of
+going stale.
+
+Polled, not Touched-driven: `Touched`/`TouchEnded` on a thin slab you are
+standing still on is unreliable, and being stuck slow (or stuck fast) on the
+last stretch home is the worst place for that bug. Eight strips against a few
+players a few times a second costs nothing.
+
+`map.safeZones` is resolved from `Workspace.Map`, never from the generator's
+scratch folder — on a hand-edited map the generated strips are thrown away and
+the saved ones (which the owner may have moved) are the real ones.
+
+## No Zzz on field squishies
+
+`SquishyFactory` builds no "Zzz" billboard: a whole field of them read as
+clutter. The giants keep theirs (`EnemyService` builds its own), where it is the
+tell that matters. `SquishyService` still toggles a "Zzz" by name on pickup and
+re-drop; both sites are nil-guarded, so they are simply no-ops now.
+
 ## Display pedestals
 
 Every slot carries an Ionic column (`buildPedestal`, PlotService). Bottom to
