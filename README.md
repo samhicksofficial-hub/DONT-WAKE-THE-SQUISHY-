@@ -112,5 +112,39 @@ Those are where player bases get built — drag a marker and that base moves wit
 it. The markers work on a generated map too, so you can reposition the bases
 without freezing the rest of the arena.
 
-Bases, squishies and the giants are always built fresh per server (they are
-per-player and runtime-owned), so they never appear in the Edit view.
+Squishies and the giants are always built fresh per server, so they never appear
+in the Edit view.
+
+## Editing the plots by hand
+
+The base buildings work the same way, with their own tool:
+
+1. Reopen the place (same script-cache reason as above).
+2. Paste [`tools/build_plots_in_studio.luau`](tools/build_plots_in_studio.luau)
+   into the command bar and press Enter.
+3. **`Workspace.PlotShells`** appears with all eight buildings in it. Edit them.
+4. **Ctrl+S** to save.
+
+`PlotShells` is the **source**; `Workspace.Plots` is the **runtime** folder the
+server fills as players join and empties as they leave. They are deliberately
+separate — anything left in `Plots` by hand is thrown away seconds into a play
+session, while the server only ever *reads* `PlotShells`.
+
+The tool ticks `HandEdited` on the folder. PlotService checks it and copies your
+saved building instead of generating one, then lays the gameplay furniture (slot
+platforms, collect and unlock pads, upgrade plaques, deposit pad) on top at run
+time. Those are wired to live state, so they cannot be edited here. Untick
+`HandEdited` to go back to generated bases without losing your edits.
+
+Two things to know:
+
+- **Keep the part named `SpawnPoint`.** It is where the owner spawns, and a
+  shell without one is ignored.
+- **Floors are the one catch.** Shells are saved at a fixed storey count. When a
+  player buys a floor, the building has to be re-cut for the new height, so that
+  plot falls back to the generator and your edits stop applying to it. Every plot
+  still at the saved floor count keeps using your version. To edit a taller
+  building, change `FLOORS` at the top of the tool and re-run it.
+
+The vacant sign is swapped for the house marker and the owner's name board
+automatically when someone claims a plot, so you only design the empty building.

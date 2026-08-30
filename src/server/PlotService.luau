@@ -778,6 +778,90 @@ local function getBaseBuilder(): any
 	return baseBuilder
 end
 
+-- ------------------------------------------------------- hand-edited shells --
+-- Saved base buildings live in Workspace.PlotShells, put there by
+-- tools/build_plots_in_studio.luau and edited by hand in Studio. They are the
+-- plot equivalent of Workspace.Map's HandEdited switch: when a shell is saved
+-- for a spot, the generator stands down and the saved building is used instead.
+--
+-- Saved shells are the SOURCE; Workspace.Plots stays the runtime folder. Keeping
+-- them apart means a live plot being built, rebuilt or destroyed never touches
+-- the thing the owner has been editing.
+
+local SHELL_FOLDER = "PlotShells"
+local shellsMissingWarned = false
+
+-- The saved shell for a spot, or nil if there is not a usable one.
+local function findSavedShell(spotIndex: number): Model?
+	local folder = workspace:FindFirstChild(SHELL_FOLDER)
+	if folder == nil or folder:GetAttribute("HandEdited") ~= true then
+		return nil
+	end
+	local builder = getBaseBuilder()
+	if builder == nil then
+		return nil
+	end
+	local attrs = (builder :: any).ShellAttributes
+	if attrs == nil then
+		return nil
+	end
+	for _, child in folder:GetChildren() do
+		if child:IsA("Model") and tonumber(child:GetAttribute(attrs.SpotIndex)) == spotIndex then
+			return child
+		end
+	end
+	return nil
+end
+
+-- Copies the saved shell for `spotIndex` into `model` and reads its shell data
+-- back. Returns (false, nil) when there is nothing saved for this spot, or when
+-- what is saved was built for a different floor count — the caller then
+-- generates as usual.
+--
+-- Mirrors pcall's shape so the call site can fall through to builder.Build
+-- without special-casing.
+local function adoptSavedShell(builder: any, model: Model, spotIndex: number, floors: any): (boolean, any)
+	if typeof(builder.Adopt) ~= "function" then
+		return false, nil
+	end
+	local saved = findSavedShell(spotIndex)
+	if saved == nil then
+		return false, nil
+	end
+
+	local ok, shell = pcall(function()
+		-- Copy in, rather than reparenting: the saved shell has to survive to
+		-- serve the next player who claims this spot.
+		local copy = saved:Clone()
+		for _, child in copy:GetChildren() do
+			child.Parent = model
+		end
+		copy:Destroy()
+		return builder.Adopt(model, floors)
+	end)
+
+	if not ok then
+		warn(("[PlotService] saved shell for spot %d failed to adopt: %s"):format(spotIndex, tostring(shell)))
+		model:ClearAllChildren()
+		return false, nil
+	end
+	if shell == nil then
+		-- Saved at a different storey count, so its walls and stairs are cut for
+		-- floors this owner does not have. Generating is the only correct move.
+		if not shellsMissingWarned then
+			shellsMissingWarned = true
+			warn(
+				("[PlotService] spot %d has a saved shell built for a different floor count, so it was generated instead. Re-run tools/build_plots_in_studio.luau to re-save the shells at the floor count you want to edit."):format(
+					spotIndex
+				)
+			)
+		end
+		model:ClearAllChildren()
+		return false, nil
+	end
+	return true, shell
+end
+
 -- ---------------------------------------------------------------- plot build --
 
 -- Returns true once the plot is registered.
@@ -855,7 +939,22 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	local builder = getBaseBuilder()
 	if builder ~= nil then
 		local above, below = floorCounts(player)
-		local ok, shell = pcall(builder.Build, player, model, baseCFrame, { above = above, below = below })
+		local floors = { above = above, below = below }
+		-- A shell saved in the place wins over a generated one, exactly as a
+		-- hand-edited Map wins over generated geometry.
+		local ok, shell = adoptSavedShell(builder, model, spotIndex, floors)
+		if ok then
+			-- Shells are saved unowned, so a claimed plot swaps the vacant sign
+			-- for the house marker and the owner's board.
+			if typeof(builder.DressForOwner) == "function" then
+				local dressed, dressErr = pcall(builder.DressForOwner, model, baseCFrame, player, floors)
+				if not dressed then
+					warn(("[PlotService] dressing saved shell for %s failed: %s"):format(player.Name, tostring(dressErr)))
+				end
+			end
+		else
+			ok, shell = pcall(builder.Build, player, model, baseCFrame, floors)
+		end
 		if ok and typeof(shell) == "table" then
 			shellBuilt = true
 			if typeof(shell.floorTop) == "number" then
@@ -1099,7 +1198,13 @@ local function buildVacant(spotIndex: number)
 
 	local model = Instance.new("Model")
 	model.Name = ("VacantPlot%d"):format(spotIndex)
-	local ok, err = pcall(builder.Build, nil, model, baseCFrame)
+	-- Unclaimed spots show the saved shell too, so the street reads the same
+	-- whether or not anyone is home.
+	local zeroFloors = { above = 0, below = 0 }
+	local ok, err = adoptSavedShell(builder, model, spotIndex, zeroFloors)
+	if not ok then
+		ok, err = pcall(builder.Build, nil, model, baseCFrame)
+	end
 	if not ok then
 		warn(("[PlotService] vacant plot %d failed: %s"):format(spotIndex, tostring(err)))
 		model:Destroy()

@@ -772,4 +772,84 @@ function BaseBuilder.Build(player: Player?, model: Model, baseCFrame: CFrame, fl
 	}
 end
 
+-- ------------------------------------------------------- hand-edited shells --
+
+-- Attributes stamped on a saved shell by tools/build_plots_in_studio.luau.
+-- The storey heights are NOT stored: they are a pure function of the floor
+-- counts, so recomputing them keeps one source of truth and cannot drift.
+BaseBuilder.ShellAttributes = {
+	SpotIndex = "ShellSpotIndex",
+	FloorsAbove = "ShellFloorsAbove",
+	FloorsBelow = "ShellFloorsBelow",
+}
+
+-- Stamps a freshly built shell so it can be recognised and reused after being
+-- saved into the place and edited by hand.
+function BaseBuilder.TagShell(model: Model, spotIndex: number, floors: { above: number, below: number }?)
+	local attrs = BaseBuilder.ShellAttributes
+	model:SetAttribute(attrs.SpotIndex, spotIndex)
+	model:SetAttribute(attrs.FloorsAbove, floors and floors.above or 0)
+	model:SetAttribute(attrs.FloorsBelow, floors and floors.below or 0)
+end
+
+-- Reads a saved shell back into the same BaseShell the generator returns, so
+-- PlotService can lay its gameplay furniture onto a building it did not build.
+--
+-- Returns nil when the model cannot stand in for a generated shell — no spawn
+-- point, or it was saved at a different storey count. A shell's walls, stairs
+-- and floor slabs are all cut for the floors it had, so one saved with a
+-- basement cannot be reused by an owner who has not bought one.
+function BaseBuilder.Adopt(model: Model, floors: { above: number, below: number }?): BaseShell?
+	local attrs = BaseBuilder.ShellAttributes
+	local wantAbove = floors and floors.above or 0
+	local wantBelow = floors and floors.below or 0
+	local savedAbove = tonumber(model:GetAttribute(attrs.FloorsAbove)) or 0
+	local savedBelow = tonumber(model:GetAttribute(attrs.FloorsBelow)) or 0
+	if savedAbove ~= wantAbove or savedBelow ~= wantBelow then
+		return nil
+	end
+
+	local spawnPoint = model:FindFirstChild("SpawnPoint", true)
+	if spawnPoint == nil or not spawnPoint:IsA("BasePart") then
+		return nil
+	end
+
+	computeFloorTops(wantAbove, wantBelow)
+	return {
+		spawnPoint = spawnPoint,
+		floorTop = FLOOR_TOPS[GROUND_INDEX],
+		floorTops = table.clone(FLOOR_TOPS),
+		groundIndex = GROUND_INDEX,
+	}
+end
+
+-- Swaps an adopted shell's dressing over to a claimed base.
+--
+-- Shells are saved with no owner, so they wear the vacant sign and have no
+-- house marker — Build decides that at the end from whether a player was
+-- passed. An adopted shell needs the same decision applied afterwards: the
+-- vacant sign comes off, the floating house marker and the owner's name board
+-- go on. Called only for claimed plots; a vacant one is already correct.
+function BaseBuilder.DressForOwner(model: Model, baseCFrame: CFrame, player: Player, floors: { above: number, below: number }?)
+	computeFloorTops(floors and floors.above or 0, floors and floors.below or 0)
+
+	-- buildVacantSign leaves SignPost + SignBoard; buildOwnerSign rebuilds its
+	-- own SignPost, so both of the vacant pieces go.
+	for _, name in { "SignPost", "SignBoard" } do
+		local existing = model:FindFirstChild(name)
+		if existing ~= nil then
+			existing:Destroy()
+		end
+	end
+
+	local ok, err = pcall(buildHouseMarker, model, baseCFrame)
+	if not ok then
+		warn(("[BaseBuilder] house marker failed for %s: %s"):format(player.Name, tostring(err)))
+	end
+	ok, err = pcall(buildOwnerSign, model, baseCFrame, player)
+	if not ok then
+		warn(("[BaseBuilder] owner sign failed for %s: %s"):format(player.Name, tostring(err)))
+	end
+end
+
 return BaseBuilder

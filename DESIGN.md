@@ -378,6 +378,34 @@ pale-strawberry checkered walkway, cream walls, frosting-pink roofs, butter slot
 tiles, candy pads). Nothing is darker than a soft caramel; text uses
 `Palette.Ink`, a soft cocoa, never pure black.
 
+## Hand-edited plot shells
+
+`Workspace.PlotShells` holds one saved base building per spot, put there by
+`tools/build_plots_in_studio.luau`. It is the plot equivalent of
+`Workspace.Map`'s `HandEdited` switch.
+
+- **`PlotShells` is the source, `Plots` is the runtime folder.** PlotService only
+  ever reads `PlotShells` and copies out of it; it never writes there. Keeping
+  them apart means a live plot being built, rebuilt or destroyed cannot touch
+  what the owner has been editing.
+- **The split is still shell vs furniture.** An adopted shell replaces
+  `BaseBuilder.Build` only. PlotService lays its own gameplay pieces (platforms,
+  pads, plaques) on top exactly as before, so nothing runtime-owned is editable
+  by hand.
+- **Storey heights are recomputed, never stored.** A shell records only
+  `ShellSpotIndex`, `ShellFloorsAbove`, `ShellFloorsBelow`; `BaseBuilder.Adopt`
+  recomputes the floor tops from those. One source of truth, no drift.
+- **A shell saved at a different floor count is refused.** Its walls, stairs and
+  slabs are cut for the floors it had, so `Adopt` returns nil and the generator
+  takes over for that plot. This is why buying a floor drops a plot back to
+  generated geometry.
+- **Shells are saved unowned**, wearing the vacant sign with no house marker.
+  `BaseBuilder.DressForOwner` performs the swap when a plot is claimed — the same
+  decision `Build` makes inline from whether a player was passed.
+
+New BaseBuilder API: `ShellAttributes`, `TagShell(model, spotIndex, floors)`,
+`Adopt(model, floors) -> BaseShell?`, `DressForOwner(model, baseCFrame, player, floors)`.
+
 ## Icons (`Config.Icons`)
 
 Every icon the game draws is a Roblox asset id, never a file path — a local PNG
