@@ -14,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local Util = require(Shared:WaitForChild("Util"))
+local SquishyModels = require(Shared:WaitForChild("SquishyModels"))
 local UiRefs = require(script.Parent.UiRefs)
 
 -- Card styling, matched to the pack's own item cards.
@@ -31,11 +32,25 @@ local LOCKED_TRANSPARENCY = 0.25
 local LOCKED_RARITY_FADE = 0.5 -- how far the rarity colour is pulled to black
 local UNKNOWN = "???"
 
+-- Preview framing. The camera looks slightly down and to one side so a squishy
+-- reads as a solid object rather than a flat front-on sticker.
+local PREVIEW_FOV = 40
+local PREVIEW_DIR = Vector3.new(0.45, 0.34, 1).Unit
+local PREVIEW_PADDING = 1.22 -- >1 leaves air around the model inside the card
+local PREVIEW_AMBIENT = Color3.fromRGB(190, 190, 200)
+local PREVIEW_LIGHT = Color3.fromRGB(255, 252, 245)
+local PREVIEW_LIGHT_DIR = Vector3.new(-0.4, -1, -0.6)
+-- An undiscovered squishy shows as a black cut-out: you get its silhouette
+-- (and its rarity) as the hint, but not what it actually is.
+local SILHOUETTE = Color3.new(0, 0, 0)
+local REVEALED = Color3.new(1, 1, 1)
+
 type Entry = {
 	frame: Frame,
 	nameLabel: TextLabel,
 	rarityLabel: TextLabel,
 	incomeLabel: TextLabel,
+	viewport: ViewportFrame?,
 	squishyName: string,
 	incomeText: string,
 	rarityName: string,
@@ -62,6 +77,74 @@ local function addLabel(parent: Frame, name: string, height: number, y: number):
 	return label
 end
 
+-- A live 3D preview of the squishy, framed to fill the card.
+--
+-- The model comes from SquishyModels rather than SquishyFactory: the factory
+-- also hangs a pickup prompt and two billboards off the body, which are
+-- gameplay furniture with no business inside a menu.
+--
+-- Returns nil if the model cannot be built, so a single bad catalog entry
+-- costs that card its picture rather than taking the whole index down.
+local function buildPreview(parent: Frame, def: any): ViewportFrame?
+	-- build() returns (Model, height); only the model matters here.
+	local ok, result = pcall(function()
+		return (SquishyModels.build :: any)({
+			shape = def.shape,
+			color = def.color,
+			sparkle = def.sparkle,
+			scale = def.scale,
+		})
+	end)
+	if not ok or typeof(result) ~= "Instance" then
+		warn(("[IndexUi] preview build failed for %s: %s"):format(tostring(def.name), tostring(result)))
+		return nil
+	end
+	local model = result :: Model
+
+	local viewport = Instance.new("ViewportFrame")
+	viewport.Name = "Preview"
+	viewport.AnchorPoint = Vector2.new(0.5, 0)
+	viewport.Position = UDim2.fromScale(0.5, 0.02)
+	viewport.Size = UDim2.fromScale(0.88, 0.48)
+	viewport.BackgroundTransparency = 1
+	viewport.BorderSizePixel = 0
+	viewport.Ambient = PREVIEW_AMBIENT
+	viewport.LightColor = PREVIEW_LIGHT
+	viewport.LightDirection = PREVIEW_LIGHT_DIR
+	viewport.Parent = parent
+
+	-- The body is an invisible collision box sized to the visual. Leaving it in
+	-- would pad the bounding box with empty space and shrink the squishy.
+	local body = model:FindFirstChild("Body")
+	if body ~= nil then
+		body:Destroy()
+	end
+	model.Parent = viewport
+
+	local camera = Instance.new("Camera")
+	camera.FieldOfView = PREVIEW_FOV
+	camera.Parent = viewport
+	viewport.CurrentCamera = camera
+
+	-- Frame on the model's widest face, not its bounding sphere. A sphere fitted
+	-- around a box is ~1.7x the box's side, which parks every squishy small and
+	-- lost in the middle of its card. Depth counts for less than width/height
+	-- because the camera is off to one side, hence the fraction on Z.
+	local okExtents, centre, size = pcall(function()
+		local cf, extents = model:GetBoundingBox()
+		return cf.Position, extents
+	end)
+	if okExtents and typeof(size) == "Vector3" and size.Magnitude > 0 then
+		local extent = math.max(size.X, size.Y, size.Z * 0.7)
+		local distance = (extent * PREVIEW_PADDING) / (2 * math.tan(math.rad(PREVIEW_FOV * 0.5)))
+		camera.CFrame = CFrame.lookAt(centre + PREVIEW_DIR * distance, centre)
+	else
+		camera.CFrame = CFrame.lookAt(PREVIEW_DIR * 8, Vector3.zero)
+	end
+
+	return viewport
+end
+
 local function buildEntry(def: any, rarity: any, cellSize: UDim2, order: number): Entry
 	local frame = Instance.new("Frame")
 	frame.Name = "Entry" .. order
@@ -82,11 +165,16 @@ local function buildEntry(def: any, rarity: any, cellSize: UDim2, order: number)
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
 	stroke.Parent = frame
 
+	-- The picture takes the top half of the card, so the three lines move down
+	-- and tighten up to share what is left.
+	local viewport = buildPreview(frame, def)
+
 	return {
 		frame = frame,
-		nameLabel = addLabel(frame, "SquishyName", 0.24, 0.24),
-		rarityLabel = addLabel(frame, "Rarity", 0.17, 0.53),
-		incomeLabel = addLabel(frame, "Income", 0.2, 0.79),
+		nameLabel = addLabel(frame, "SquishyName", 0.16, 0.58),
+		rarityLabel = addLabel(frame, "Rarity", 0.13, 0.73),
+		incomeLabel = addLabel(frame, "Income", 0.15, 0.88),
+		viewport = viewport,
 		squishyName = def.name,
 		incomeText = Util.formatMoney(rarity.income) .. "/s",
 		rarityName = def.rarity,
@@ -103,6 +191,13 @@ local function paintEntry(entry: Entry, discovered: boolean)
 	entry.rarityLabel.TextColor3 = if discovered
 		then entry.rarityColor
 		else entry.rarityColor:Lerp(Color3.new(0, 0, 0), LOCKED_RARITY_FADE)
+
+	-- ImageColor3 tints the whole rendered viewport, so one property turns the
+	-- model into a black cut-out and back without touching the model itself.
+	local viewport = entry.viewport
+	if viewport ~= nil then
+		viewport.ImageColor3 = if discovered then REVEALED else SILHOUETTE
+	end
 
 	if discovered then
 		entry.frame.BackgroundTransparency = CARD_TRANSPARENCY

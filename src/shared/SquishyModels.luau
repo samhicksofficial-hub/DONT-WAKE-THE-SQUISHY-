@@ -804,6 +804,24 @@ end
 
 -- Applies a variant's look to an already-built model. Unknown or "none"
 -- variants leave it exactly as it was.
+-- Clears whatever surface art a template carries so a variant's flat colour can
+-- actually be seen.
+--
+-- This is the whole reason Gold squishies were still turning up in their normal
+-- colours: 14 of the 15 mesh templates carry a baked TextureID, and a texture
+-- renders OVER Color, so painting the part gold changed nothing at all. The
+-- texture has to go before the coat means anything. OpalDumpling is the one
+-- template that uses a SurfaceAppearance instead, so both are handled.
+local function stripSurfaceArt(part: BasePart)
+	local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
+	if appearance ~= nil then
+		appearance:Destroy()
+	end
+	if part:IsA("MeshPart") then
+		(part :: MeshPart).TextureID = ""
+	end
+end
+
 local function applyVariant(model: Model, variantName: string?)
 	if variantName == nil or variantName == "Normal" then
 		return
@@ -823,23 +841,15 @@ local function applyVariant(model: Model, variantName: string?)
 
 	if variant.effect == "gold" then
 		for _, part in visuals do
+			stripSurfaceArt(part)
 			part.Color = variant.color or Color3.fromRGB(255, 206, 74)
 			part.Material = Enum.Material.Metal
 			part.Reflectance = 0.35
-			-- A gold coat replaces any baked texture's colour, so drop the
-			-- surface appearance that would otherwise fight it.
-			local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
-			if appearance then
-				appearance:Destroy()
-			end
 		end
 	elseif variant.effect == "rainbow" then
 		for _, part in visuals do
+			stripSurfaceArt(part)
 			part.Material = Enum.Material.Neon
-			local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
-			if appearance then
-				appearance:Destroy()
-			end
 			table.insert(rainbowParts, part)
 		end
 		startRainbowLoop()
