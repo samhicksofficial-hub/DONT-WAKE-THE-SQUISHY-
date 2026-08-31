@@ -7,7 +7,7 @@ This file is the **binding contract** for all modules. If code disagrees with th
 **squishies** (blob plushies) of varying rarity. Two **giant enemy squishies** patrol the field
 asleep; each has a notice radius (larger if you're carrying). Wake one and it chases you and
 slaps you: you get flung and drop your carried squishy. Carry squishies back to your **plot**
-(safe zone) and deposit them on slots; each placed squishy accrues $/s onto a green collect pad
+(safe zone) and stand them on pedestals; each placed squishy accrues $/s onto a green collect pad
 that the owner touches to collect. Rarity means higher income but a stronger carry slowdown.
 
 ## Rojo layout (already mapped, do not change)
@@ -31,7 +31,7 @@ Already written (spine — do NOT rewrite, only read):
 To implement:
 - `src/server/MapBuilder.luau`    — static world: field, walkway, plots ring positions, waypoints
 - `src/server/EconomyService.luau`— leaderstats + Money attribute + AddMoney
-- `src/server/PlotService.luau`   — plot claiming/building, slots, deposit, income accrual, collect pads
+- `src/server/PlotService.luau`   — plot claiming/building, slots, placing, income accrual, collect pads
 - `src/server/SquishyService.luau`— field spawning, pickup/carry/drop, walkspeed ownership
 - `src/server/EnemyService.luau`  — 2 giants: patrol, notice, chase, slap
 - `src/client/Hud.luau`           — top-center money HUD
@@ -119,7 +119,7 @@ SquishyService:
 - `IsCarrying(player: Player) -> boolean`
 - `TakeCarriedDef(player: Player) -> table?` — if carrying: destroys the carried model, restores
   walkspeed, clears attributes, and returns the catalog def table (`Config`-shaped, see below).
-  Returns nil if not carrying. Called by PlotService on successful deposit.
+  Returns nil if not carrying. Called by PlotService when a squishy is placed.
 - `ForceDrop(player: Player)` — if carrying: detach the model, re-anchor it at the player's
   position snapped to ground (y = 1), set State = "Sleeping", re-enable its ProximityPrompt,
   parent it to `map.squishyFolder` (it can be picked up again; it does NOT count against the
@@ -132,7 +132,7 @@ SquishyService:
 
 PlotService:
 - `Start(services, map)` — claims plots on PlayerAdded, builds plot structures, runs the income
-  accrual loop, handles deposit zones, collect pads, and slot-unlock pads.
+  accrual loop, handles placing, collect pads, and slot-unlock pads.
 - `GetPlotOrigin(player: Player) -> CFrame?` — the claimed plot spot CFrame (for respawn etc.)
 
 EnemyService:
@@ -159,11 +159,11 @@ adds billboards/prompt/attributes on top and returns a ready Model (anchored, St
    player is not already carrying. Carried squishy: unanchored, massless, welded ~2 studs above
    the character's head, all its parts CanCollide/CanQuery/CanTouch = false, prompt disabled,
    State = "Carried". WalkSpeed = base * SpeedMult.
-2. Deposit: player touches their OWN plot's deposit pad while carrying -> PlotService calls
-   `SquishyService.TakeCarriedDef(player)`, places a fresh display squishy (via SquishyFactory,
-   prompt disabled/removed, anchored, State = "Placed") on the next FREE UNLOCKED slot. If all
-   unlocked slots are full, deposit is refused (leave the player carrying; optional: brief
-   red flash on the pad).
+2. Placing: the owner holds E at the pedestal they want (`PlacePrompt`, enabled only while
+   that slot is unlocked and empty) -> PlotService calls `SquishyService.TakeCarriedDef(player)`
+   and stands a fresh display squishy (via SquishyFactory, prompt removed, anchored,
+   State = "Placed", turned 180 degrees) on THAT slot. Which slot is the player's choice —
+   there is no deposit pad and nothing auto-fills the next free one.
 3. Income: every `Config.Plot.AccrueTick` seconds each occupied slot accrues
    `income * elapsed` into that slot's pending pool; its green collect pad shows the formatted
    pending amount on a readable label. Owner touches the pad -> `EconomyService.AddMoney`,
@@ -418,8 +418,8 @@ state cannot gate `Enabled`).
 changes — placing, unlocking, rebuilding after a floor purchase, and being
 stolen from. Missing one leaves a prompt that offers a slot it cannot fill.
 
-The deposit pad no longer places anything. It still flashes when crossed while
-carrying, so the old habit gets an answer rather than silence.
+There is no deposit pad any more. It had no job left once placing became a
+per-pedestal choice, and a labelled pad that does nothing reads as broken.
 
 The upgrade plaque is **click-only**: `CanTouch` is false and there is no
 Touched connection, so brushing past a slot can never buy a level by accident.

@@ -1,7 +1,7 @@
 --!strict
 -- PlotService: claims a plot spot per player, builds the gameplay furniture
--- inside it (slot platforms, collect/unlock pads, deposit pad), runs the income
--- accrual loop, and handles deposit / collect / unlock touches.
+-- inside it (slot platforms, pedestals, collect and unlock pads), runs the
+-- income accrual loop, and handles placing, collecting and unlocking.
 -- See DESIGN.md gameplay rules 2, 3, 4 and 6.
 --
 -- The BUILDING around that furniture — floor, walls, roof, ceiling lights,
@@ -11,7 +11,6 @@
 --
 -- Plot local space (the spot CFrame's LookVector faces the field, so -Z is
 -- the plot FRONT toward the walkway and +Z is the BACK):
---   z = -14   deposit pad (front edge)
 --   z =  -5   front-row collect pads    z =  1   front-row platforms (slots 1-5)
 --   z =   7   back-row collect pads     z = 13   back-row platforms  (slots 6-10)
 -- The front row is staggered +4 studs in X so the back row's pads stay
@@ -45,7 +44,6 @@ local PAD_LIFT = 0.06 -- pads float a hair off the floor so they read as flat di
 local PAD_RIM_EXTRA = 1.1
 local PAD_RIM_THICKNESS = 0.16
 local PAD_FORWARD = 6 -- pad center sits this far in front of its platform center
-local DEPOSIT_SIZE = Vector3.new(10, 0.35, 6)
 local SPAWN_INSET = 4 -- fallback spawn marker distance in from the front edge
 -- The marker sits ON the floor, exactly like BaseBuilder's: SpawnService adds
 -- its own standing offset, so lifting it here too would drop the character.
@@ -68,7 +66,6 @@ local PLAQUE_FRONT_OFFSET = 0.6
 local UPGRADE_PLAQUE_SIZE = Vector2.new(4.6, 2.4)
 
 local COLOR_MONEY = Color3.fromRGB(85, 255, 85)
-local COLOR_REFUSE = Color3.fromRGB(255, 70, 70)
 local COLOR_WHITE = Color3.new(1, 1, 1)
 
 -- Cylinder parts extend along their X axis; this stands one upright. The extra
@@ -116,9 +113,6 @@ type PlotRecord = {
 	floorTop: number,
 	spawnPoint: BasePart?,
 	slots: { SlotRecord },
-	depositPad: BasePart,
-	depositFlashing: boolean,
-	lastDepositTouch: number,
 	connections: { RBXScriptConnection },
 }
 
@@ -646,8 +640,6 @@ local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	end))
 end
 
--- ---------------------------------------------------------------- depositing --
-
 -- ------------------------------------------------------------- levelling --
 
 -- The yellow upgrade plaque: a rounded card with a fat black outline, an arrow
@@ -824,7 +816,7 @@ local function tryUpgrade(plot: PlotRecord, slot: SlotRecord, buyer: Player)
 end
 
 -- The yellow "upgrade" step in front of an occupied slot. Built once per slot
--- and then only shown/hidden, so a redeposit never stacks pads.
+-- and then only shown/hidden, so replacing a squishy never stacks pads.
 local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 	local pad = slot.upgradePad
 	if pad == nil then
@@ -916,39 +908,6 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	slot.squishy = model
 	updateCollectLabel(plot, slot)
 	showUpgradePad(plot, slot)
-end
-
-local function flashDepositPad(plot: PlotRecord)
-	if plot.depositFlashing then
-		return
-	end
-	plot.depositFlashing = true
-	local pad = plot.depositPad
-	pad.Color = COLOR_REFUSE
-	task.delay(0.35, function()
-		if pad.Parent ~= nil then
-			pad.Color = Palette.DepositPad
-		end
-		plot.depositFlashing = false
-	end)
-end
-
--- Walking onto the deposit pad no longer places anything: which pedestal a
--- squishy goes on is the player's choice now, made by holding E at the one they
--- want. The pad still flashes when you cross it carrying, so the old habit gets
--- an answer ("not here") instead of silence.
-local function onDepositTouched(plot: PlotRecord, hitPart: BasePart)
-	if not isOwnerTouch(plot, hitPart) then
-		return
-	end
-	local now = os.clock()
-	if now - plot.lastDepositTouch < TOUCH_DEBOUNCE then
-		return
-	end
-	plot.lastDepositTouch = now
-	if servicesRef.SquishyService.IsCarrying(plot.player) then
-		flashDepositPad(plot)
-	end
 end
 
 -- ------------------------------------------------------------- placing --
@@ -1252,30 +1211,6 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 		spawnPoint = marker
 	end
 
-	-- Deposit pad at the front edge, facing the walkway.
-	local depositPad = newPart(
-		model,
-		"DepositPad",
-		DEPOSIT_SIZE,
-		baseCFrame * CFrame.new(0, floorTop + PAD_LIFT + DEPOSIT_SIZE.Y / 2, -(halfDepth - 4)),
-		Palette.DepositPad,
-		Enum.Material.Neon
-	)
-	depositPad.CanCollide = false
-	local depositBorder = newPart(
-		depositPad,
-		"Border",
-		Vector3.new(DEPOSIT_SIZE.X + PAD_RIM_EXTRA, PAD_RIM_THICKNESS, DEPOSIT_SIZE.Z + PAD_RIM_EXTRA),
-		baseCFrame * CFrame.new(0, floorTop + PAD_RIM_THICKNESS / 2, -(halfDepth - 4)),
-		Palette.SlotBorder,
-		Enum.Material.SmoothPlastic
-	)
-	depositBorder.CanCollide = false
-	depositBorder.CanTouch = false
-	depositBorder.CanQuery = false
-	local depositGui = newBillboard(depositPad, "DepositGui", 6, 2, 2.8, 110)
-	newLabel(depositGui, "Deposit", COLOR_WHITE, 1, 1)
-
 	local plot: PlotRecord = {
 		player = player,
 		spotIndex = spotIndex,
@@ -1285,15 +1220,8 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 		floorTop = floorTop,
 		spawnPoint = spawnPoint,
 		slots = {},
-		depositPad = depositPad,
-		depositFlashing = false,
-		lastDepositTouch = 0,
 		connections = {},
 	}
-
-	table.insert(plot.connections, depositPad.Touched:Connect(function(hitPart: BasePart)
-		onDepositTouched(plot, hitPart)
-	end))
 
 	-- Slot platforms: staggered rows toward the back of the plot, filling the
 	-- ground floor before climbing to the next storey.

@@ -1,7 +1,7 @@
 --!strict
 -- BaseBuilder: builds ONE player's base building — the enclosed room that
 -- PlotService then fills with slot platforms, collect/unlock pads and the
--- deposit pad. Matched to the reference screenshots (see the "Map Design
+-- pedestals. Matched to the reference screenshots (see the "Map Design
 -- Contract" in DESIGN.md): grey floor, dark charcoal walls under a white trim
 -- strip, a warm orange inner face on the back wall, white-framed windows with
 -- dark panes, a flat roof lit from beneath by glowing ceiling panels, a

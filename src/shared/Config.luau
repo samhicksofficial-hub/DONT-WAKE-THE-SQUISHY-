@@ -203,7 +203,6 @@ Config.Palette = {
 	SlotPlatform = Color3.fromRGB(255, 226, 150), -- butter tile
 	SlotBorder = Color3.fromRGB(228, 190, 140),   -- toasted edge
 	CollectPad = Color3.fromRGB(124, 220, 62),    -- vivid grass green, like the reference pads
-	DepositPad = Color3.fromRGB(160, 226, 246),   -- blue raspberry
 	UnlockPad = Color3.fromRGB(255, 214, 150),    -- caramel
 	SignBoard = Color3.fromRGB(242, 166, 134),    -- peach board
 	HouseBody = Color3.fromRGB(255, 214, 130),    -- butter house

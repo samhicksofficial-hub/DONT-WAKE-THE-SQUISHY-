@@ -23,7 +23,7 @@
 -- collect pad here and it moves in the live game.
 --
 -- What is still built at run time: the upgrade plaques, the unlock pads on
--- locked slots, and the deposit pad. Those are wired to live per-player state.
+-- locked slots. Those are wired to live per-player state.
 --
 -- Every slot gets a collect pad here, including ones that start locked. A shell
 -- does not know whose plot it will become, so the server hides the pads of

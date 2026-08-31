@@ -131,10 +131,14 @@ separate — anything left in `Plots` by hand is thrown away seconds into a play
 session, while the server only ever *reads* `PlotShells`.
 
 The tool ticks `HandEdited` on the folder. PlotService checks it and copies your
-saved building instead of generating one, then lays the gameplay furniture (slot
-platforms, collect and unlock pads, upgrade plaques, deposit pad) on top at run
-time. Those are wired to live state, so they cannot be edited here. Untick
-`HandEdited` to go back to generated bases without losing your edits.
+saved building instead of generating one. Untick `HandEdited` to go back to
+generated bases without losing your edits.
+
+The shells contain the slot furniture too — tile borders, platforms, pedestals
+and collect pads — and the server finds each one by name and reuses it, so
+moving a pillar or a collect pad here moves it in the live game. Only the
+upgrade plaques and the unlock pads on locked slots are still built at run time,
+because they are wired to live per-player state.
 
 Two things to know:
 
