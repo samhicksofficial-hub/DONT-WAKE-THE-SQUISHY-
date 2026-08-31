@@ -216,7 +216,10 @@ local STAIR_W = Config.Base.StairWidth :: number
 local STAIR_STEPS = math.max(2, Config.Base.StairSteps :: number)
 -- The stairwell runs up the left wall; the slab above leaves this much of the
 -- left side open so there is a hole to climb through.
-local STAIR_WELL_DEPTH = 20
+-- The flight is deeper now that the plot is: 24 studs of run over one storey
+-- gives a ~30-degree climb instead of the old cramped 35, and the extra depth
+-- lives in ground the slot rows never wanted.
+local STAIR_WELL_DEPTH = 24
 
 -- One flight from `fromTop` up to `toTop`, hugging the left wall at the back.
 -- Steps are plain anchored parts: a character walks up them with no jumping as
@@ -386,14 +389,33 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		buildFloorSlab(model, baseCFrame, level, floorTop)
 		buildStairs(model, baseCFrame, level, FLOOR_TOPS[level - 1], floorTop)
 
+		-- A BAND, not a lid. This used to be one slab the size of the whole
+		-- floor plan, which did three things it was never meant to: it sealed
+		-- the stairwell opening (so the flight climbed into what looked like a
+		-- solid white ceiling), it swallowed the storey's four ceiling panels
+		-- whole, and it hid the room below behind an opaque plane. Three
+		-- strips hugging the back and side walls mark the same storey line
+		-- from outside and leave the interior open, exactly like BackTrim and
+		-- LeftTrim/RightTrim do at the top of the walls.
+		local bandY = floorTop - SLAB_T - TRIM_H / 2
 		newProp(
 			model,
-			("StoreyBand%d"):format(level),
-			Vector3.new(FOOTPRINT.X + TRIM_PROUD * 2, TRIM_H, FOOTPRINT.Y + TRIM_PROUD * 2),
-			baseCFrame * CFrame.new(0, floorTop - SLAB_T - TRIM_H / 2, 0),
+			("StoreyBandBack%d"):format(level),
+			Vector3.new(FOOTPRINT.X + TRIM_PROUD * 2, TRIM_H, WALL_T + TRIM_PROUD * 2),
+			baseCFrame * CFrame.new(0, bandY, HALF_DEPTH - WALL_T / 2),
 			Palette.BaseTrim,
 			Enum.Material.SmoothPlastic
 		)
+		for _, side in { -1, 1 } do
+			newProp(
+				model,
+				("StoreyBand%s%d"):format(side < 0 and "Left" or "Right", level),
+				Vector3.new(WALL_T + TRIM_PROUD * 2, TRIM_H, SIDE_DEPTH + TRIM_PROUD * 2),
+				baseCFrame * CFrame.new(side * (HALF_WIDTH - WALL_T / 2), bandY, SIDE_Z),
+				Palette.BaseTrim,
+				Enum.Material.SmoothPlastic
+			)
+		end
 	end
 end
 
@@ -774,6 +796,9 @@ end
 
 -- ------------------------------------------------------- hand-edited shells --
 
+-- Said once, not once per plot: eight identical warnings is noise.
+local footprintWarned = false
+
 -- Attributes stamped on a saved shell by tools/build_plots_in_studio.luau.
 -- The storey heights are NOT stored: they are a pure function of the floor
 -- counts, so recomputing them keeps one source of truth and cannot drift.
@@ -781,6 +806,13 @@ BaseBuilder.ShellAttributes = {
 	SpotIndex = "ShellSpotIndex",
 	FloorsAbove = "ShellFloorsAbove",
 	FloorsBelow = "ShellFloorsBelow",
+	-- The footprint the shell was BUILT at. Config.Plot.BaseSize is tuning, so
+	-- it can change under a place that already has shells saved in it — and a
+	-- shell cut for the old size adopted into the new layout is a wrong-sized
+	-- room with the slot grid hanging out through its walls. Stamping the size
+	-- lets Adopt refuse it and say why, instead of building something broken.
+	FootprintX = "ShellFootprintX",
+	FootprintY = "ShellFootprintY",
 }
 
 -- Stamps a freshly built shell so it can be recognised and reused after being
@@ -790,6 +822,8 @@ function BaseBuilder.TagShell(model: Model, spotIndex: number, floors: { above: 
 	model:SetAttribute(attrs.SpotIndex, spotIndex)
 	model:SetAttribute(attrs.FloorsAbove, floors and floors.above or 0)
 	model:SetAttribute(attrs.FloorsBelow, floors and floors.below or 0)
+	model:SetAttribute(attrs.FootprintX, FOOTPRINT.X)
+	model:SetAttribute(attrs.FootprintY, FOOTPRINT.Y)
 end
 
 -- Reads a saved shell back into the same BaseShell the generator returns, so
@@ -806,6 +840,41 @@ function BaseBuilder.Adopt(model: Model, floors: { above: number, below: number 
 	local savedAbove = tonumber(model:GetAttribute(attrs.FloorsAbove)) or 0
 	local savedBelow = tonumber(model:GetAttribute(attrs.FloorsBelow)) or 0
 	if savedAbove ~= wantAbove or savedBelow ~= wantBelow then
+		return nil
+	end
+
+	-- A shell cut for a different footprint cannot stand in for this one: the
+	-- walls would be in the wrong place and the slot grid would spill through
+	-- them. Refuse loudly rather than build a broken room. Re-running
+	-- tools/build_plots_in_studio.luau re-cuts the shells at the current size.
+	local savedX = tonumber(model:GetAttribute(attrs.FootprintX))
+	local savedY = tonumber(model:GetAttribute(attrs.FootprintY))
+	if savedX == nil or savedY == nil then
+		-- Saved before the stamp existed, so MEASURE it: buildShell always cuts
+		-- the ground "Floor" to exactly the footprint. Trusting a missing stamp
+		-- is what let a 56x42 shell get adopted into a 56x58 layout — the guard
+		-- read nil, skipped itself, and built the old cramped room.
+		local savedFloor = model:FindFirstChild("Floor")
+		if savedFloor ~= nil and savedFloor:IsA("BasePart") then
+			savedX = savedFloor.Size.X
+			savedY = savedFloor.Size.Z
+		end
+	end
+	if savedX == nil or savedY == nil then
+		return nil -- cannot prove it fits; generate rather than guess
+	end
+	if math.abs(savedX - FOOTPRINT.X) > 0.01 or math.abs(savedY - FOOTPRINT.Y) > 0.01 then
+		if not footprintWarned then
+			footprintWarned = true
+			warn(
+				("[BaseBuilder] the saved plot shells are %.0f x %.0f but Config.Plot.BaseSize is now %.0f x %.0f, so they were ignored and the bases generated instead. Re-run tools/build_plots_in_studio.luau to re-cut them at the new size."):format(
+					savedX,
+					savedY,
+					FOOTPRINT.X,
+					FOOTPRINT.Y
+				)
+			)
+		end
 		return nil
 	end
 

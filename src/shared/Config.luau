@@ -201,7 +201,9 @@ Config.Base = {
 	CeilingLights = 4,     -- per storey
 	-- Staircase up the left side of the plot, hugging the wall.
 	StairWidth = 7,
-	StairSteps = 11,
+	-- 13 shallow steps rather than 11 steep ones: the flight has the depth for
+	-- it now, and a ~30-degree climb reads as a staircase instead of a ladder.
+	StairSteps = 13,
 }
 
 -- Cozy / ASMR-obby palette: milky pastels and food colours, nothing darker
@@ -393,7 +395,10 @@ Config.Plot = {
 	-- Price to unlock ground-floor slot N (entries <= StartUnlocked ignored).
 	UnlockPrices = { 0, 0, 0, 0, 150, 1000, 7500, 50000, 350000, 2500000 },
 	AccrueTick = 0.5,         -- seconds between income accrual updates
-	BaseSize = Vector2.new(56, 42), -- XZ footprint of a plot (4 per 240-wide edge)
+	-- XZ footprint of a plot. Width is capped near 60 by the spacing between
+	-- neighbours (fieldSize.X / 4); DEPTH grows outward into open ground, which
+	-- is where the room for the stair lane and the slot rows came from.
+	BaseSize = Vector2.new(56, 58),
 }
 
 -- Icons from the Free Icon Pack 3.0.1 (Basic), uploaded once to the owner's

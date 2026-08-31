@@ -32,10 +32,18 @@ local Palette = Config.Palette
 local DEFAULT_FLOOR_TOP = Config.Base.FloorTop :: number
 local TOUCH_DEBOUNCE = 0.4
 
-local SLOT_SPACING = 8
-local FRONT_ROW_STAGGER = 2
+-- Slot grid. The plot is 56 wide with 1.5-stud walls, and the staircase eats
+-- the leftmost 7 studs plus its rail — so the space the slots actually get is
+-- x = -19.25 .. 26.5, centred on +3.6, NOT on the middle of the room. Offset
+-- them onto that centre and the back row stops crowding the stair rail while
+-- the whole grid still reads as centred in the space you can walk in.
+local SLOT_SPACING = 9 -- 3 clear studs between neighbouring platforms
+local SLOT_X_OFFSET = 3.6 -- centre of the floor left over beside the stairs
 local FRONT_ROW_Z = 1
-local ROW_DEPTH = 12
+-- Deep enough that the back row's collect pad clears the front row's platform
+-- without staggering the rows sideways (the old stagger pushed the right-hand
+-- column into the wall once the grid moved off centre).
+local ROW_DEPTH = 14
 local PLATFORM_SIZE = Vector3.new(6, 0.4, 6)
 local PLATFORM_BORDER_OVERHANG = 1.2 -- darker slab under each platform, per side x2
 local PLATFORM_BORDER_THICKNESS = 0.35
@@ -81,6 +89,7 @@ type SlotRecord = {
 	localZ: number,
 	floorTop: number,       -- the storey this slot stands on
 	slotOnFloor: number,    -- 1..SlotsPerFloor position within its own storey
+	isGroundFloor: boolean, -- ground floor sells its slots one at a time
 	unlocked: boolean,
 	occupied: boolean,
 	income: number,
@@ -325,7 +334,7 @@ local function slotLayout(index: number, floorTops: { number }, groundIndex: num
 	local col = withinFloor % slotsPerRow
 	return {
 		floorTop = floorTops[floorIndex + 1] or fallbackTop,
-		localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING + (row == 0 and FRONT_ROW_STAGGER or 0),
+		localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING + SLOT_X_OFFSET,
 		localZ = FRONT_ROW_Z + row * ROW_DEPTH,
 		slotOnFloor = withinFloor + 1,
 		isGroundFloor = (floorIndex + 1) == groundIndex,
@@ -1334,6 +1343,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			localZ = localZ,
 			floorTop = slotFloorTop,
 			slotOnFloor = layout.slotOnFloor,
+			isGroundFloor = layout.isGroundFloor,
 			unlocked = unlocked,
 			occupied = false,
 			income = 0,
@@ -1458,7 +1468,11 @@ local function rebuildPlot(player: Player)
 	local saved = snapshotSlots(plot)
 	local groundUnlocks = 0
 	for _, slot in plot.slots do
-		if slot.unlocked and slot.slotOnFloor <= (Config.Plot.SlotsPerFloor :: number) then
+		-- GROUND floor only. slotOnFloor is 1..SlotsPerFloor on every storey, so
+		-- the old bound here was always true: a bought floor arrives with all ten
+		-- slots open, which counted as ten ground-floor purchases and handed the
+		-- player every remaining ground slot free on the next rebuild.
+		if slot.unlocked and slot.isGroundFloor then
 			groundUnlocks = math.max(groundUnlocks, slot.slotOnFloor)
 		end
 	end
@@ -1482,9 +1496,12 @@ local function rebuildPlot(player: Player)
 		return
 	end
 	for _, slot in fresh.slots do
-		if slot.slotOnFloor <= groundUnlocks then
-			slot.unlocked = true
-			refreshPlacePrompt(slot)
+		if slot.isGroundFloor and not slot.unlocked and slot.slotOnFloor <= groundUnlocks then
+			-- unlockSlot, not a bare flag. Setting `unlocked` alone leaves the
+			-- padlock standing and never builds a collect pad, so a slot the
+			-- player had already paid for came back looking locked and quietly
+			-- accrued its income into a pad that does not exist.
+			pcall(unlockSlot, fresh, slot)
 		end
 	end
 	local index = 1
