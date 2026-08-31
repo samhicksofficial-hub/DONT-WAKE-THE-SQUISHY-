@@ -83,6 +83,11 @@ their base sits at that y.
   around it (`Config.Field.WalkwayWidth`) is the safe zone; plots sit on the outside of the ring.
 - MapBuilder must reuse/recolor the existing `Workspace.Baseplate` if present (do not delete),
   and move the existing `Workspace.SpawnLocation` onto the south walkway (create one if missing).
+- **Basements currently collide with the baseplate.** The stock plate is 16 studs thick
+  (y = -16..0) and bases dig down to about y = -28, so a purchased *basement* storey is
+  filled solid and its stairwell capped. Above-ground floors are unaffected. Fixing it
+  means giving the world a ground plane with holes at the eight plot footprints, which
+  is a bigger change than the plate contract above allows; it is not done yet.
 - Everything MapBuilder creates goes under `Workspace.Map` except the three empty folders
   (`Squishies`, `Enemies`, `Plots`) which are direct children of Workspace.
 - All static parts: Anchored = true. Use Enum.Material.SmoothPlastic unless noted.

@@ -220,6 +220,9 @@ local STAIR_STEPS = math.max(2, Config.Base.StairSteps :: number)
 -- gives a ~30-degree climb instead of the old cramped 35, and the extra depth
 -- lives in ground the slot rows never wanted.
 local STAIR_WELL_DEPTH = 24
+-- Floor on the tread thickness, so a short storey never leaves paper treads.
+local MIN_TREAD_T = 0.6
+local RAIL_H = 3
 
 -- One flight from `fromTop` up to `toTop`, hugging the left wall at the back.
 -- Steps are plain anchored parts: a character walks up them with no jumping as
@@ -231,31 +234,44 @@ local function buildStairs(model: Model, baseCFrame: CFrame, level: number, from
 	-- Climb from the back of the plot toward the front.
 	local startZ = HALF_DEPTH - WALL_T - run / 2
 
+	-- A tread slab each, NOT a solid block down to the storey floor.
+	--
+	-- Solid blocks filled the whole wedge above the floor, so the flight up to
+	-- the NEXT storey hung its own underside into this one: headroom measured
+	-- 12.0 studs at the bottom step and fell a stud per step to 1.0 at the top,
+	-- and a character wedged solid two thirds of the way up and could never
+	-- finish the climb. Treads are `run` deep at `run` spacing and `rise`
+	-- thick, so they still butt into one continuous stepped surface with no
+	-- gap to fall through, and every flight clears the one below by a storey.
+	local tread = math.max(rise, MIN_TREAD_T)
 	for step = 1, STAIR_STEPS do
 		local topY = fromTop + rise * step
-		-- Each step is a solid block from the floor up to its own tread, so
-		-- there is never a gap to fall through between treads.
-		local height = topY - fromTop
 		newPart(
 			model,
 			("Stair%d_%d"):format(level, step),
-			Vector3.new(STAIR_W, height, run),
-			baseCFrame * CFrame.new(stairX, fromTop + height / 2, startZ - (step - 1) * run),
+			Vector3.new(STAIR_W, tread, run),
+			baseCFrame * CFrame.new(stairX, topY - tread / 2, startZ - (step - 1) * run),
 			step % 2 == 0 and Palette.BaseTrim or Palette.BaseFloor,
 			Enum.Material.SmoothPlastic
 		)
 	end
 
-	-- A low rail along the open side so nobody walks off the flight.
+	-- A rail along the open side, pitched to follow the flight. It used to be a
+	-- level bar at the flight's mid-height, floating six studs over the bottom
+	-- step and buried inside the treads for the whole top half.
+	local climb = toTop - fromTop
 	newProp(
 		model,
 		("StairRail%d"):format(level),
-		Vector3.new(0.5, 3, STAIR_WELL_DEPTH),
-		baseCFrame * CFrame.new(
-			stairX + STAIR_W / 2,
-			fromTop + (toTop - fromTop) / 2 + 2,
-			startZ - STAIR_WELL_DEPTH / 2 + run / 2
-		),
+		Vector3.new(0.5, RAIL_H, math.sqrt(STAIR_WELL_DEPTH * STAIR_WELL_DEPTH + climb * climb)),
+		baseCFrame
+			* CFrame.new(
+				stairX + STAIR_W / 2,
+				fromTop + climb / 2 + RAIL_H / 2,
+				startZ - STAIR_WELL_DEPTH / 2 + run / 2
+			)
+			-- +Z is the back of the well, where the flight starts low.
+			* CFrame.Angles(math.atan2(climb, STAIR_WELL_DEPTH), 0, 0),
 		Palette.BaseTrim,
 		Enum.Material.SmoothPlastic
 	)
