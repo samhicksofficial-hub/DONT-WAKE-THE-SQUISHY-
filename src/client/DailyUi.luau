@@ -33,6 +33,8 @@ local PANEL_ASPECT = 1.75
 -- tween returns to it, so the two cannot drift apart.
 local PANEL_SIZE = UDim2.fromScale(0.62, 0.62)
 local PANEL_SIZE_SMALL = UDim2.fromScale(0.5, 0.5)
+-- Seconds the panel stays up after a successful claim before closing itself.
+local AUTO_CLOSE = 3
 
 -- One icon per reward kind in Config.DailyRewards. Anything unrecognised falls
 -- back to the gift, so adding a reward kind never leaves a card blank.
@@ -250,6 +252,16 @@ function DailyUi.Start()
 		claimRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DailyClaim") :: RemoteFunction
 	end)
 
+	-- Shows the panel and cancels any pending auto-close. Every open bumps the
+	-- token, so a player who reopens the panel inside the three seconds after a
+	-- claim does not have it shut in their face by the previous claim's timer.
+	local openToken = 0
+	local function show()
+		openToken += 1
+		panel.Visible = true
+		refresh()
+	end
+
 	local busy = false
 	UiRefs.bindButton(claim, function()
 		if busy or player:GetAttribute("DailyClaimable") ~= true then
@@ -268,6 +280,16 @@ function DailyUi.Start()
 			busy = false
 			if ok and typeof(day) == "number" then
 				UiRefs.notify(("Day %d reward claimed!"):format(day), 4)
+				-- Close itself once the claim has landed: the panel has nothing
+				-- left to offer today, and the notification saying so is behind
+				-- it. Long enough to watch the card flip to Claimed first.
+				openToken += 1
+				local mine = openToken
+				task.delay(AUTO_CLOSE, function()
+					if openToken == mine then
+						panel.Visible = false
+					end
+				end)
 			end
 			refresh()
 		end)
@@ -289,7 +311,7 @@ function DailyUi.Start()
 	task.spawn(function()
 		task.wait(2)
 		if player:GetAttribute("DailyClaimable") == true then
-			panel.Visible = true
+			show()
 			panel.Size = PANEL_SIZE_SMALL
 			TweenService:Create(
 				panel,
@@ -300,9 +322,10 @@ function DailyUi.Start()
 	end)
 
 	DailyUi.Toggle = function()
-		panel.Visible = not panel.Visible
 		if panel.Visible then
-			refresh()
+			panel.Visible = false
+		else
+			show()
 		end
 	end
 end

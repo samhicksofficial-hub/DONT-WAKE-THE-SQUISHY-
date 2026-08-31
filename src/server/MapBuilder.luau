@@ -41,6 +41,10 @@ local Palette = Config.Palette :: any
 
 -- Top surface of the field / walkway slabs (slabs are 1 stud, centered at 0.5).
 local GROUND_Y = 1
+-- The ground plane outside the arena, laid as slabs with a hole under every
+-- base. Thin on purpose: it replaces a 16-stud baseplate that reached down into
+-- the basements, and its top stays on the plane the baseplate's was, y = 0.
+local GROUND_SLAB_T = 1
 -- Boundary wall footprint depth; its INNER face lines up with the walkway edge.
 local WALL_THICKNESS = 2
 -- Extra clearance either side of a plot in the boundary wall gap.
@@ -332,7 +336,8 @@ function MapBuilder.Build(): Map
 	local enemyFolder = ensureFolder(Workspace, "Enemies")
 	local plotFolder = ensureFolder(Workspace, "Plots")
 
-	-- Baseplate: reuse & recolor the existing one; never move or delete it.
+	-- Baseplate: recolor the existing one; never move or delete it. It is stood
+	-- down further below, once the ground slabs that replace it are in.
 	pcall(function()
 		local baseplate = Workspace:FindFirstChild("Baseplate")
 		if baseplate and baseplate:IsA("BasePart") then
@@ -664,6 +669,123 @@ function MapBuilder.Build(): Map
 	local markerSpots = readPlotSpotMarkers(root)
 	if markerSpots ~= nil then
 		plotSpots = markerSpots
+	end
+
+	-- Keep every base off the walkway.
+	--
+	-- A base is built centred on its spot, so a spot nearer the field than half
+	-- the base depth stands the building on the safe zone. Hand-placed markers
+	-- go stale exactly that way: these were dropped when a base was 42 studs
+	-- deep and stayed put when it grew to 58, which walked all eight bases eight
+	-- studs into the walkway. Push any such spot straight back out along its own
+	-- facing until its frontage clears the walkway edge -- the computed layout
+	-- already sits exactly there, so this only ever moves a stale marker.
+	for index, spot in plotSpots do
+		local outward = -spot.LookVector -- LookVector faces the field
+		local bound = if math.abs(outward.Z) >= math.abs(outward.X) then outerZ else outerX
+		local reach = (spot.Position - fieldCenter):Dot(outward)
+		local needed = bound + plotFootprint.Y / 2
+		if reach < needed - 0.01 then
+			plotSpots[index] = spot + outward * (needed - reach)
+			warn(
+				("[MapBuilder] PlotSpot%d sat %.1f studs inside the walkway for a %d-deep base; moved it back"):format(
+					index,
+					needed - reach,
+					plotFootprint.Y
+				)
+			)
+		end
+	end
+
+	-- Ground plane, with a hole under every base.
+	--
+	-- The stock Baseplate is one 16-stud slab from y -16 to 0, and a base with
+	-- basements digs to about -55: the slab filled the cellars solid and capped
+	-- their stairwells, so a bought basement was a storey you could not reach.
+	-- A single part cannot have holes, so the ground is laid as slabs cut around
+	-- the bases instead, and the Baseplate is left in place but stood down.
+	--
+	-- The holes stop at the base's INNER face, so the ground still runs under
+	-- the outer walls and there is no rim to fall down between the two.
+	local baseplate = Workspace:FindFirstChild("Baseplate")
+	if baseplate ~= nil and baseplate:IsA("BasePart") then
+		local extent = math.max(baseplate.Size.X, baseplate.Size.Z) / 2
+		local ground = ensureFolder(root, "Ground")
+		ground:ClearAllChildren() -- derived from the spots; always rebuilt
+
+		local wall = Config.Base.WallThickness :: number
+		local halfW = plotFootprint.X / 2 - wall
+		local halfD = plotFootprint.Y / 2 - wall
+		type Hole = { minX: number, maxX: number, minZ: number, maxZ: number }
+		local holes: { Hole } = {}
+		for _, spot in plotSpots do
+			-- Axis-aligned extent of the (possibly turned) footprint. Spots face
+			-- along an axis, so this is the rectangle itself, not a bound on it.
+			local right, look = spot.RightVector, spot.LookVector
+			local ex = math.abs(right.X) * halfW + math.abs(look.X) * halfD
+			local ez = math.abs(right.Z) * halfW + math.abs(look.Z) * halfD
+			table.insert(holes, {
+				minX = spot.Position.X - ex,
+				maxX = spot.Position.X + ex,
+				minZ = spot.Position.Z - ez,
+				maxZ = spot.Position.Z + ez,
+			})
+		end
+
+		-- Cut into rows at every hole edge in Z, then each row into runs at the
+		-- X edges of the holes that row actually crosses. Eight bases in two
+		-- tidy rows collapse to thirteen slabs; dragged markers just make more.
+		local cuts = { -extent, extent }
+		for _, hole in holes do
+			table.insert(cuts, hole.minZ)
+			table.insert(cuts, hole.maxZ)
+		end
+		table.sort(cuts)
+
+		local slabs = 0
+		local function slab(x0: number, x1: number, z0: number, z1: number)
+			if x1 - x0 < 0.05 or z1 - z0 < 0.05 then
+				return
+			end
+			slabs += 1
+			makePart(
+				ground,
+				("Ground%d"):format(slabs),
+				Vector3.new(x1 - x0, GROUND_SLAB_T, z1 - z0),
+				CFrame.new((x0 + x1) / 2, -GROUND_SLAB_T / 2, (z0 + z1) / 2),
+				BASEPLATE_COLOR
+			).Material = Enum.Material.Grass
+		end
+
+		for i = 1, #cuts - 1 do
+			local z0, z1 = cuts[i], cuts[i + 1]
+			local middle = (z0 + z1) / 2
+			local spans: { { number } } = {}
+			for _, hole in holes do
+				if hole.minZ < middle and middle < hole.maxZ then
+					table.insert(spans, { hole.minX, hole.maxX })
+				end
+			end
+			table.sort(spans, function(a, b)
+				return a[1] < b[1]
+			end)
+			local cursor = -extent
+			for _, span in spans do
+				slab(cursor, span[1], z0, z1)
+				cursor = math.max(cursor, span[2])
+			end
+			slab(cursor, extent, z0, z1)
+		end
+
+		-- Stood down, not deleted or moved: it stays in the place for the mapper
+		-- and Studio's Edit view, and the slabs above take over in a live game.
+		-- CanQuery too, not just CanCollide — a non-collidable part still answers
+		-- raycasts, and every "where is the floor here" cast in the game would
+		-- have kept finding a phantom surface at y = 0 across the whole world.
+		baseplate.CanCollide = false
+		baseplate.CanQuery = false
+		baseplate.CanTouch = false
+		baseplate.Transparency = 1
 	end
 
 	-- The safe-zone strips SquishyService polls to lift the carry penalty.

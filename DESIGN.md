@@ -81,13 +81,17 @@ their base sits at that y.
   top at y = 1). All gameplay happens on top of these (y = 1).
 - Field: `Config.Field.Size` (200 x 200) centered at origin, bright green slab. The walkway ring
   around it (`Config.Field.WalkwayWidth`) is the safe zone; plots sit on the outside of the ring.
-- MapBuilder must reuse/recolor the existing `Workspace.Baseplate` if present (do not delete),
-  and move the existing `Workspace.SpawnLocation` onto the south walkway (create one if missing).
-- **Basements currently collide with the baseplate.** The stock plate is 16 studs thick
-  (y = -16..0) and bases dig down to about y = -28, so a purchased *basement* storey is
-  filled solid and its stairwell capped. Above-ground floors are unaffected. Fixing it
-  means giving the world a ground plane with holes at the eight plot footprints, which
-  is a bigger change than the plate contract above allows; it is not done yet.
+- Ground outside the arena is `Workspace.Map.Ground`: slabs (top at y = 0) laid with a hole
+  under each base, so the basements have somewhere to be. It is derived from the plot spots
+  and rebuilt every start, hand-edited map or not. The holes stop at each base's inner wall
+  face, so the ground runs under the outer walls and leaves no rim to fall down.
+- MapBuilder must reuse/recolor the existing `Workspace.Baseplate` if present (do not delete
+  or move it), then stand it down — CanCollide, CanQuery and CanTouch off, Transparency 1 —
+  once the ground slabs are in. CanQuery matters: a merely non-collidable plate still answers
+  raycasts, and every "where is the floor" cast would find a phantom surface at y = 0.
+- A base is centred on its plot spot, so a spot nearer the field than half the base depth puts
+  the building on the walkway. MapBuilder pushes any such spot back out along its own facing;
+  hand-placed markers go stale this way whenever `Config.Plot.BaseSize` changes.
 - Everything MapBuilder creates goes under `Workspace.Map` except the three empty folders
   (`Squishies`, `Enemies`, `Plots`) which are direct children of Workspace.
 - All static parts: Anchored = true. Use Enum.Material.SmoothPlastic unless noted.
