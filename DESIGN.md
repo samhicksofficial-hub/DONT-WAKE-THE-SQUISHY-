@@ -248,6 +248,12 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 - `IndexUi.luau` — fills `Index.Scrolling` from `Config.Squishies`, greying undiscovered.
 - `UpgradesUi.luau`, `RebirthUi.luau`, `WheelUi.luau` — drive their panels from the
   attributes below and fire the remotes.
+- `DailyUi.luau` — the seven-day login panel. The pack ships no daily frame, so this
+  one **clones `Frames.Index`**, strips its content and keeps the shell (`Stroke`,
+  `Ratio`, `Title`). Cloning is deliberate: the frame, the nine-sliced blue title bar
+  and the Close button are then the pack's own art. Any new panel that the pack does
+  not ship should be built the same way — a hand-styled approximation is what made
+  this one the odd menu out.
 - `Popups.luau` — unchanged (world-space "+$X").
 
 ## Progression services (server)

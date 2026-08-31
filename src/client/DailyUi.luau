@@ -1,10 +1,11 @@
 --!strict
 -- DailyUi — the seven-day login reward panel.
 --
--- The Essential UI Pack ships no daily-rewards frame, so this one is built in
--- code and styled to match it: a rounded dark panel with a blue title bar, a
--- red X, a row of day cards and a claim button. It lives in the pack's own
--- ScreenGui so it shares the pack's layering and reset behaviour.
+-- The Essential UI Pack ships no daily-rewards frame, so this panel CLONES one
+-- it does ship (Index) and swaps the contents out. Cloning rather than
+-- rebuilding is the point: the frame, the nine-sliced blue title bar and the
+-- Close button are then the pack's own art, not an approximation of it, which
+-- is why this menu used to be the one that looked out of place.
 --
 -- Server state arrives on attributes (DailyStreak, DailyClaimable,
 -- DailyNextDay); claiming goes out on the DailyClaim RemoteFunction.
@@ -20,15 +21,18 @@ local Config = require(Shared:WaitForChild("Config"))
 local DailyUi = {}
 
 local FONT = Enum.Font.FredokaOne
-local PANEL_BG = Color3.fromRGB(24, 26, 34)
-local TITLE_BG = Color3.fromRGB(58, 152, 235)
 local CARD_LOCKED = Color3.fromRGB(38, 44, 58)
 local CARD_CLAIMED = Color3.fromRGB(40, 78, 52)
 local CARD_READY = Color3.fromRGB(96, 200, 108)
 local CLAIM_GREEN = Color3.fromRGB(96, 216, 104)
 local TEXT = Color3.new(1, 1, 1)
 local TEXT_DIM = Color3.fromRGB(168, 174, 188)
-local CLOSE_RED = Color3.fromRGB(232, 64, 82)
+-- Wider than the pack's square panels: seven day cards in a row need the room.
+local PANEL_ASPECT = 1.75
+-- One source of truth for the open size: the shell sets it and the pop-open
+-- tween returns to it, so the two cannot drift apart.
+local PANEL_SIZE = UDim2.fromScale(0.62, 0.62)
+local PANEL_SIZE_SMALL = UDim2.fromScale(0.5, 0.5)
 
 -- One icon per reward kind in Config.DailyRewards. Anything unrecognised falls
 -- back to the gift, so adding a reward kind never leaves a card blank.
@@ -66,67 +70,91 @@ local function label(parent: Instance, text: string, size: UDim2, pos: UDim2, co
 	return item
 end
 
+-- The panel shell, CLONED from one the pack ships rather than approximated.
+--
+-- Every other menu is a pack frame: black at half transparency, a 3px stroke,
+-- an aspect-ratio constraint, and a Title bar whose blue is a nine-sliced
+-- ImageLabel with the pack's own Close button on it. Hand-building something
+-- close to that is exactly why this panel never matched — so it now takes a
+-- real one and swaps out the contents.
+--
+-- Returns the panel and its Close button, or nil if the pack is not there.
+local function buildShell(refs: any): (Frame?, GuiButton?)
+	local frames = refs.gui:FindFirstChild("Frames")
+	if frames == nil then
+		return nil, nil
+	end
+	-- Index is the closest donor: a plain content area with no bespoke art.
+	local donor = frames:FindFirstChild("Index") or frames:FindFirstChild("Shop")
+	if donor == nil or not donor:IsA("Frame") then
+		return nil, nil
+	end
+
+	local panel = donor:Clone()
+	panel.Name = "DailyRewards"
+	panel.Visible = false
+	panel.Parent = frames
+
+	-- Keep the shell, drop the donor's content. Title carries the bar art and
+	-- the Close button, so it stays.
+	for _, child in panel:GetChildren() do
+		if child.Name ~= "Stroke" and child.Name ~= "Ratio" and child.Name ~= "Title" then
+			child:Destroy()
+		end
+	end
+
+	-- Seven cards in a row need a wider frame than the square Index.
+	local ratio = panel:FindFirstChildOfClass("UIAspectRatioConstraint")
+	if ratio then
+		ratio.AspectRatio = PANEL_ASPECT
+	end
+	panel.Size = PANEL_SIZE
+
+	local title = panel:FindFirstChild("Title")
+	local closeButton: GuiButton? = nil
+	if title then
+		for _, child in title:GetChildren() do
+			if child:IsA("GuiButton") then
+				closeButton = child
+			elseif child:IsA("TextLabel") then
+				-- The donor names this after itself ("Shop" holding "Index"),
+				-- so retitle by role rather than by name.
+				child.Text = "Daily Rewards"
+			end
+		end
+	end
+	return panel, closeButton
+end
+
 function DailyUi.Start()
 	local player = Players.LocalPlayer
 	local refs = UiRefs.get()
 
 	-- ---------------------------------------------------------- the panel --
 
-	local panel = Instance.new("Frame")
-	panel.Name = "DailyRewards"
-	panel.AnchorPoint = Vector2.new(0.5, 0.5)
-	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.fromScale(0.62, 0.5)
-	panel.BackgroundColor3 = PANEL_BG
-	panel.BackgroundTransparency = 0.08
-	panel.Visible = false
-	panel.ZIndex = 30
-	panel.Parent = refs.gui:FindFirstChild("Frames") or refs.gui
-	corner(panel, 0.05)
-	stroke(panel, 3, Color3.new(0, 0, 0))
-
-	local ratio = Instance.new("UIAspectRatioConstraint")
-	ratio.AspectRatio = 1.9
-	ratio.DominantAxis = Enum.DominantAxis.Width
-	ratio.Parent = panel
-
-	local title = Instance.new("Frame")
-	title.Name = "Title"
-	title.Size = UDim2.fromScale(1, 0.16)
-	title.BackgroundColor3 = TITLE_BG
-	title.ZIndex = 31
-	title.Parent = panel
-	corner(title, 0.25)
-	label(title, "Daily Rewards", UDim2.fromScale(0.7, 0.8), UDim2.fromScale(0.04, 0.1), TEXT).ZIndex = 32
-
-	local close = Instance.new("TextButton")
-	close.Name = "Close"
-	close.AnchorPoint = Vector2.new(1, 0.5)
-	close.Position = UDim2.fromScale(0.98, 0.5)
-	close.Size = UDim2.fromScale(0.075, 0.7)
-	close.BackgroundColor3 = CLOSE_RED
-	close.Text = "X"
-	close.Font = FONT
-	close.TextScaled = true
-	close.TextColor3 = TEXT
-	close.ZIndex = 32
-	close.Parent = title
-	corner(close, 0.25)
-	stroke(close, 2, Color3.new(0, 0, 0))
+	local panel, close = buildShell(refs)
+	if panel == nil then
+		warn("[DailyUi] no pack panel to clone; daily rewards disabled")
+		return
+	end
 
 	-- ------------------------------------------------------------- cards --
 
+	-- The pack's panel is taller than the one this replaced, so the cards fill
+	-- the band between the title bar and the claim button rather than sitting
+	-- in a thin strip with dead space under them.
 	local grid = Instance.new("Frame")
 	grid.Name = "Days"
 	grid.BackgroundTransparency = 1
-	grid.Position = UDim2.fromScale(0.02, 0.19)
-	grid.Size = UDim2.fromScale(0.96, 0.56)
+	grid.Position = UDim2.fromScale(0.02, 0.2)
+	grid.Size = UDim2.fromScale(0.96, 0.53)
 	grid.ZIndex = 31
 	grid.Parent = panel
 
+	-- Seven across: 7 cells + 6 gaps has to land under 1.0 of the grid width.
 	local layout = Instance.new("UIGridLayout")
-	layout.CellSize = UDim2.fromScale(0.132, 0.46)
-	layout.CellPadding = UDim2.fromScale(0.008, 0.05)
+	layout.CellSize = UDim2.fromScale(0.13, 0.96)
+	layout.CellPadding = UDim2.fromScale(0.008, 0.02)
 	layout.FillDirectionMaxCells = 7
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = grid
@@ -171,8 +199,8 @@ function DailyUi.Start()
 	local claim = Instance.new("TextButton")
 	claim.Name = "ClaimAll"
 	claim.AnchorPoint = Vector2.new(0.5, 1)
-	claim.Position = UDim2.fromScale(0.5, 0.97)
-	claim.Size = UDim2.fromScale(0.4, 0.17)
+	claim.Position = UDim2.fromScale(0.5, 0.95)
+	claim.Size = UDim2.fromScale(0.38, 0.15)
 	claim.BackgroundColor3 = CLAIM_GREEN
 	claim.Text = "CLAIM"
 	claim.Font = FONT
@@ -245,9 +273,11 @@ function DailyUi.Start()
 		end)
 	end)
 
-	UiRefs.bindButton(close, function()
-		panel.Visible = false
-	end)
+	if close ~= nil then
+		UiRefs.bindButton(close, function()
+			panel.Visible = false
+		end)
+	end
 
 	player:GetAttributeChangedSignal("DailyClaimable"):Connect(refresh)
 	player:GetAttributeChangedSignal("DailyStreak"):Connect(refresh)
@@ -260,11 +290,11 @@ function DailyUi.Start()
 		task.wait(2)
 		if player:GetAttribute("DailyClaimable") == true then
 			panel.Visible = true
-			panel.Size = UDim2.fromScale(0.5, 0.4)
+			panel.Size = PANEL_SIZE_SMALL
 			TweenService:Create(
 				panel,
 				TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-				{ Size = UDim2.fromScale(0.62, 0.5) }
+				{ Size = PANEL_SIZE }
 			):Play()
 		end
 	end)
