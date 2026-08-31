@@ -376,12 +376,13 @@ local MESH_SHAPES: { [string]: MeshConfig } = {
 
 	-- The three giants. Unlike the collectables these are their OWN models
 	-- rather than a borrowed shape, so none of them tint: each keeps the
-	-- texture it was imported with, faces included. Until the meshes are
-	-- imported into ReplicatedStorage.SquishyMeshes they fall back to a
+	-- texture it was imported with, faces included. All three import already
+	-- facing forward, so none needs the 180 flip the dumplings do. Until the
+	-- meshes are in ReplicatedStorage.SquishyMeshes they fall back to a
 	-- primitive and say so once in the Output.
-	ghostmesh = { template = "GreenGhost", yaw = 180, bakedFace = true, fallback = "dumpling" },
-	spookymesh = { template = "SpookyDumpling", yaw = 180, bakedFace = true, fallback = "dumpling" },
-	monstermesh = { template = "PinkMonster", yaw = 180, bakedFace = true, fallback = "dumpling" },
+	ghostmesh = { template = "GreenGhost", yaw = 0, bakedFace = true, fallback = "dumpling" },
+	spookymesh = { template = "SpookyDumpling", yaw = 0, bakedFace = true, fallback = "dumpling" },
+	monstermesh = { template = "PinkMonster", yaw = 0, bakedFace = true, fallback = "dumpling" },
 }
 
 -- Said once per template. A mesh that silently falls back to a primitive

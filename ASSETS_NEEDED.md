@@ -39,39 +39,37 @@ it when the IDs exist) and a little gameplay work behind each one:
 | 2x Money | A permanent multiplier stacked on top of rebirths |
 | Extra Slots | Starts you with more unlocked plot slots |
 
-## 2b. Import the three giant meshes — the only thing stopping them looking right
+## 2b. Giant meshes — IMPORTED, one step left to make them permanent
 
-The three large enemies now have their own models, staged in the repo:
+The three large enemies have their own models. You imported and named them, and
+they are now in `ReplicatedStorage.SquishyMeshes` and rendering correctly:
 
-| Folder | Import as | Used by |
+| Source in the repo | Template name | Mesh / texture asset |
 |---|---|---|
-| `Assets/green-ghost/base.obj` | `GreenGhost` | Green Ghost |
-| `Assets/spooky-dumpling/base.obj` | `SpookyDumpling` | Spooky Dumpling |
-| `Assets/pink-monster/base.obj` | `PinkMonster` | Pink Monster |
+| `Assets/green-ghost/` | `GreenGhost` | `104001572591103` / `93678723116153` |
+| `Assets/spooky-dumpling/` | `SpookyDumpling` | `87444205075691` / `122549821882584` |
+| `Assets/pink-monster/` | `PinkMonster` | `137076139008417` / `71222483245165` |
 
-Rojo cannot sync a `.obj` — geometry has to be uploaded through Studio, the
-same way the collectable squishies were. For each one:
+**They are not safe yet.** `ReplicatedStorage.SquishyMeshes` is Rojo-managed —
+`default.project.json` maps it to `Assets/SquishyMeshes.rbxm`, which still holds
+only the original 15. The next time Rojo syncs that file it replaces the whole
+folder and the three giants vanish, back to fallback primitives.
 
-1. **Stop any playtest first.** Anything created while playing is thrown away.
-2. Studio → **Avatar → Import 3D** (or Asset Manager → Meshes → Add).
-3. Pick the `base.obj`. Leave "Import with textures" on — the `texture.png`
-   beside it is wired up in `base.mtl`, so it comes in automatically.
-4. Drag the result into **`ReplicatedStorage.SquishyMeshes`** and rename it to
-   exactly the name in the table above. A Model wrapper is fine, including one
-   Studio split into several MeshParts.
-5. **Ctrl+S.**
+To make them permanent, export the folder back into the repo:
 
-Until then each giant falls back to a plain primitive and prints a line in the
-Output naming the template it wants — the game runs, it just looks wrong.
+1. In Studio, right-click **`ReplicatedStorage.SquishyMeshes`**.
+2. **Save to File...**
+3. Overwrite `Assets/SquishyMeshes.rbxm` in this repo.
+4. Commit it.
 
-Two things worth knowing:
+That has to be Studio's own export. A mesh is two uploaded asset ids, and the
+obvious shortcut — rebuilding the `.rbxm` offline from those ids with Lune —
+does not work: Lune's `MeshPart` has no `MeshId` property, so it silently
+writes templates with no geometry at all. I tried it, checked the output, and
+threw it away; the file in the repo is untouched.
 
-- **If one faces backwards**, flip its `yaw` in `MESH_SHAPES`
-  (`src/shared/SquishyModels.luau`) between `0` and `180`. I set all three to
-  `180`, which is right for most of the existing imports, but I could not check
-  these without the meshes in the place.
-- **Triangle counts** are 10.3k / 17.7k / 17.3k, all under Roblox's 21k
-  per-MeshPart limit, so none of them need decimating.
+Once the `.rbxm` has all 18, a clean clone builds the giants with no manual
+import, and re-importing is never needed again.
 
 ## 3. Images — DONE
 The Free Icon Pack 3.0.1 (Basic) you sent has been uploaded to your account and
