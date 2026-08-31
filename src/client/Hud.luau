@@ -66,13 +66,33 @@ function Hud.Start()
 	-- actually read it without it fighting the left-hand button column.
 	labelsFrame.AnchorPoint = Vector2.new(0.5, 0)
 	labelsFrame.Position = UDim2.fromScale(0.5, 0.018)
-	labelsFrame.Size = UDim2.fromScale(0.3, 0.115)
+	labelsFrame.Size = UDim2.fromScale(0.3, 0.15)
 	labelsFrame.ZIndex = 20
 	local layout = labelsFrame:FindFirstChildOfClass("UIListLayout")
 	if layout then
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		layout.VerticalAlignment = Enum.VerticalAlignment.Top
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
 	end
+
+	-- Balance to the SCREEN centre, not the left edge of the label.
+	--
+	-- Both labels are full-width rows, so the list layout was already centring
+	-- their boxes — but the pack leaves the text itself Left-aligned inside
+	-- those boxes, which pins both strings to the same left edge and lets the
+	-- shorter one hang off-centre. Centring the text is what actually makes
+	-- "$48.74k" and "$5/s" share a midline.
+	moneyLabel.TextXAlignment = Enum.TextXAlignment.Center
+	incomeLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+	-- Total on top, rate underneath. The heights sum to exactly 1: the pack
+	-- shipped 1.0 + 0.75, which overflowed the frame by three quarters of a
+	-- line and let the stack drift as the rate appeared and disappeared.
+	-- Money takes the larger share because it is the number being read.
+	moneyLabel.LayoutOrder = 1
+	moneyLabel.Size = UDim2.fromScale(1, 0.62)
+	incomeLabel.LayoutOrder = 2
+	incomeLabel.Size = UDim2.fromScale(1, 0.38)
 	-- Keep it legible on very wide screens without letting it swell on phones.
 	local ratio = labelsFrame:FindFirstChildOfClass("UIAspectRatioConstraint")
 	if ratio == nil then
