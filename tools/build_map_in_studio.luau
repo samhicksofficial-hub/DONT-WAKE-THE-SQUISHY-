@@ -51,6 +51,12 @@ local ok, err = pcall(function()
 	end
 	spots.Parent = map.root
 
+	-- The countdown sign. EventService normally builds this at server start,
+	-- but then it only ever exists while the game is running and can never be
+	-- moved or restyled. Built here it lands in the saved place, and the
+	-- service adopts it instead of making its own.
+	require(server.EventService).BuildBoard(map)
+
 	-- The switch that protects your edits.
 	map.root:SetAttribute("HandEdited", true)
 end)
@@ -58,6 +64,8 @@ end)
 if ok then
 	print("[MapTool] Map built and marked HandEdited. Edit it, then Ctrl+S to save.")
 	print("[MapTool] Pink PlotSpot markers set where each base gets built — move them to move a base.")
+	print("[MapTool] Workspace.Map.EventBoard is the countdown sign — move or restyle it freely.")
+	print("[MapTool]   Keep its TextLabels named Event1..EventN; that is how the clocks find them.")
 else
 	warn("[MapTool] failed: " .. tostring(err))
 end

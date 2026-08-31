@@ -112,6 +112,12 @@ Those are where player bases get built — drag a marker and that base moves wit
 it. The markers work on a generated map too, so you can reposition the bases
 without freezing the rest of the arena.
 
+The tool also builds **`Workspace.Map.EventBoard`**, the guaranteed-rarity
+countdown sign. EventService adopts whatever is saved there instead of building
+its own, so you can move it, resize it or repaint it freely. Keep its TextLabels
+named `Event1..EventN` 2014 that is how the clocks find them; delete the whole
+EventBoard to have a fresh one generated.
+
 Squishies and the giants are always built fresh per server, so they never appear
 in the Edit view.
 

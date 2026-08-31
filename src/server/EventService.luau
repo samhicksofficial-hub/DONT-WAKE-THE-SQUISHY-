@@ -20,6 +20,8 @@ local EventService = {}
 local Palette = Config.Palette :: any
 
 local TICK = 1 -- the board only ever shows whole seconds
+-- The one name both the builder and the adopter agree on.
+local BOARD_NAME = "EventBoard"
 local FLASH_SECONDS = 6 -- how long the "NOW!" banner stays up after a spawn
 
 -- One clock per Config.Events entry, plus every board label showing it.
@@ -41,7 +43,7 @@ end
 -- The board: a dark panel on two legs with one line per event.
 local function buildBoard(map: any): { TextLabel }
 	local board = Instance.new("Model")
-	board.Name = "EventBoard"
+	board.Name = BOARD_NAME
 
 	local fieldSize = Config.Field.Size :: Vector2
 	local spec = Config.EventBoard
@@ -124,26 +126,71 @@ local function buildBoard(map: any): { TextLabel }
 	return labels
 end
 
+-- Public so tools/build_map_in_studio.luau can put the board into the SAVED
+-- place, the same way the plot tool saves the bases. Returns the model.
+function EventService.BuildBoard(map: any): Model
+	local existing = map.root:FindFirstChild(BOARD_NAME)
+	if existing ~= nil then
+		existing:Destroy()
+	end
+	buildBoard(map)
+	return map.root:FindFirstChild(BOARD_NAME) :: Model
+end
+
+-- Every label for each event, keyed by event index.
+--
+-- Collected by NAME rather than by position in a flat list, because a board
+-- saved in the place may have been moved, re-parented or had a face's gui
+-- rebuilt by hand — and "every label at stride #Config.Events" only holds for
+-- one this service built itself moments ago.
+local function collectLabels(board: Instance): { { TextLabel } }
+	local byEvent: { { TextLabel } } = {}
+	for index = 1, #(Config.Events :: { any }) do
+		byEvent[index] = {}
+	end
+	for _, descendant in board:GetDescendants() do
+		if descendant:IsA("TextLabel") then
+			local index = tonumber(descendant.Name:match("^Event(%d+)$"))
+			if index ~= nil and byEvent[index] ~= nil then
+				table.insert(byEvent[index], descendant)
+			end
+		end
+	end
+	return byEvent
+end
+
 function EventService.Start(services: any, map: any)
 	squishyService = services.SquishyService
 
-	local ok, labels = pcall(buildBoard, map)
-	if not ok then
-		warn(("[EventService] board failed: %s"):format(tostring(labels)))
+	-- A board saved in the place WINS, exactly as a hand-edited map does: the
+	-- owner may have moved or restyled it, and regenerating would undo that.
+	-- Only a place without one gets a freshly built board.
+	local board = map.root:FindFirstChild(BOARD_NAME)
+	if board == nil then
+		local ok, err = pcall(buildBoard, map)
+		if not ok then
+			warn(("[EventService] board failed: %s"):format(tostring(err)))
+			return
+		end
+		board = map.root:FindFirstChild(BOARD_NAME)
+	end
+	if board == nil then
+		warn("[EventService] no event board to drive")
 		return
 	end
 
-	-- The board carries one label per event PER FACE, in the same order, so
-	-- event N owns every label at stride #Config.Events.
-	local eventCount = #(Config.Events :: { any })
+	local byEvent = collectLabels(board)
 	local now = os.clock()
 	for index, cfg in Config.Events :: { any } do
-		local own: { TextLabel } = {}
-		for offset = 0, #labels - 1, eventCount do
-			local label = labels[offset + index]
-			if label ~= nil then
-				table.insert(own, label)
-			end
+		local own = byEvent[index] or {}
+		if #own == 0 then
+			warn(
+				("[EventService] the saved event board has no TextLabel named 'Event%d', so the %s countdown has nowhere to show. Keep one label per event named Event1..EventN on each face, or delete Workspace.Map.%s to have it rebuilt."):format(
+					index,
+					tostring(cfg.name),
+					BOARD_NAME
+				)
+			)
 		end
 		-- Every face's label for this event travels together.
 		local state: any = {

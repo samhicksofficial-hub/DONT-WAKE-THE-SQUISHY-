@@ -483,6 +483,21 @@ Because of that, **showing and hiding the plaque is the SurfaceGui's
 `Enabled`, never the part's `Transparency`** — setting transparency back to 0
 would put the rectangle right back.
 
+## The countdown sign is hand-editable
+
+`Workspace.Map.EventBoard` is built by `tools/build_map_in_studio.luau` (via the
+public `EventService.BuildBoard(map)`) so it lives in the saved place. At server
+start EventService **adopts a saved board** and only builds one when the place
+has none — same rule as a hand-edited map or a saved plot shell.
+
+- Labels are found **by name** (`Event1..EventN`), not by their position in a
+  flat list. A saved board may have been moved, re-parented or had a face
+  rebuilt by hand, and the old stride-based lookup only held for a board the
+  service had just built itself.
+- A saved board missing an `EventN` label warns and names what is missing, so a
+  countdown with nowhere to draw is never silent.
+- Deleting `Workspace.Map.EventBoard` gets a freshly generated one back.
+
 ## Icons (`Config.Icons`)
 
 Every icon the game draws is a Roblox asset id, never a file path — a local PNG
