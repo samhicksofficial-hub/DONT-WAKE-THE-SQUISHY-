@@ -897,9 +897,12 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	model:SetAttribute("State", "Placed")
 	model.Parent = plot.model
 	local height = SquishyFactory.bodyHeight(def.name)
-	-- Stands on the pedestal's abacus, not the platform itself.
+	-- Stands on the pedestal's abacus, not the platform itself, and turned to
+	-- face into the room rather than at the back wall.
 	model:PivotTo(
-		slot.platform.CFrame * CFrame.new(0, slot.platform.Size.Y / 2 + PEDESTAL_HEIGHT + height / 2, 0)
+		slot.platform.CFrame
+			* CFrame.new(0, slot.platform.Size.Y / 2 + PEDESTAL_HEIGHT + height / 2, 0)
+			* CFrame.Angles(0, math.pi, 0)
 	)
 	slot.occupied = true
 	refreshPlacePrompt(slot)

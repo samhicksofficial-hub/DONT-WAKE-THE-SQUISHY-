@@ -796,6 +796,15 @@ local function startRainbowLoop()
 					table.remove(rainbowParts, i)
 				else
 					part.Color = color
+					-- A part that kept its painted face is tinted through its
+					-- SurfaceAppearance, so the cycle has to drive that too or
+					-- the face-bearing squishies would sit at one fixed hue.
+					local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
+					if appearance ~= nil then
+						pcall(function()
+							(appearance :: any).Color = color
+						end)
+					end
 				end
 			end
 		end
@@ -804,26 +813,43 @@ end
 
 -- Applies a variant's look to an already-built model. Unknown or "none"
 -- variants leave it exactly as it was.
--- Clears whatever surface art a template carries so a variant's flat colour can
--- actually be seen.
+
+-- Recolours one part for a variant while keeping whatever art is painted on it.
 --
--- This is the whole reason Gold squishies were still turning up in their normal
--- colours: 14 of the 15 mesh templates carry a baked TextureID, and a texture
--- renders OVER Color, so painting the part gold changed nothing at all. The
--- texture has to go before the coat means anything. OpalDumpling is the one
--- template that uses a SurfaceAppearance instead, so both are handled.
-local function stripSurfaceArt(part: BasePart)
+-- A SurfaceAppearance's Color MULTIPLIES its ColorMap, so tinting it gold
+-- leaves the painted face showing THROUGH the gold rather than erasing it.
+-- That is the whole difference between a gold dumpling and a gold blob, and it
+-- is why the face is no longer substituted with a billboard overlay.
+--
+-- A MeshPart's baked TextureID does not respond to Color at all, so for those
+-- the texture still has to go before a coat means anything. None of the
+-- textured-without-SurfaceAppearance templates carry a face (bananas, butter,
+-- cheese are all faceless), so nothing is lost there.
+--
+-- Returns true when the part kept art that draws its face.
+local function paintVariant(part: BasePart, color: Color3): boolean
 	local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
 	if appearance ~= nil then
+		local ok = pcall(function()
+			(appearance :: any).Color = color
+		end)
+		if ok then
+			part.Color = color
+			return true
+		end
+		-- A Studio build old enough to have no Color on SurfaceAppearance: the
+		-- coat can only show if the appearance goes, face and all.
 		appearance:Destroy()
 	end
 	if part:IsA("MeshPart") then
 		(part :: MeshPart).TextureID = ""
 	end
+	part.Color = color
+	return false
 end
 
--- Returns true when it stripped surface art, so the caller knows a baked-on
--- face went with it and can put a billboard one back.
+-- Returns true only when the face art could NOT be kept, so the caller knows to
+-- fall back to a billboard face.
 local function applyVariant(model: Model, variantName: string?): boolean
 	if variantName == nil or variantName == "Normal" then
 		return false
@@ -842,21 +868,30 @@ local function applyVariant(model: Model, variantName: string?): boolean
 	end
 
 	if variant.effect == "gold" then
+		local keptArt = false
 		for _, part in visuals do
-			stripSurfaceArt(part)
-			part.Color = variant.color or Color3.fromRGB(255, 206, 74)
-			part.Material = Enum.Material.Metal
-			part.Reflectance = 0.35
+			if paintVariant(part, variant.color or Color3.fromRGB(255, 206, 74)) then
+				keptArt = true
+			else
+				-- Only a part wearing no surface art gets the metal treatment;
+				-- Metal over a SurfaceAppearance washes the painted face out.
+				part.Material = Enum.Material.Metal
+				part.Reflectance = 0.35
+			end
 		end
-		return true
+		return not keptArt
 	elseif variant.effect == "rainbow" then
+		local keptArt = false
 		for _, part in visuals do
-			stripSurfaceArt(part)
-			part.Material = Enum.Material.Neon
+			if paintVariant(part, Color3.fromHSV(0, 0.85, 1)) then
+				keptArt = true
+			else
+				part.Material = Enum.Material.Neon
+			end
 			table.insert(rainbowParts, part)
 		end
 		startRainbowLoop()
-		return true
+		return not keptArt
 	end
 	return false
 end
@@ -902,10 +937,9 @@ function SquishyModels.build(spec: BuildSpec): (Model, number)
 	local model, height = finalize(rig, footprint)
 	local stripped = applyVariant(model, spec.variant)
 
-	-- A variant coat has to remove the mesh texture to be visible at all, and
-	-- on the dumplings that texture is where the face is painted. Without this
-	-- a Gold dumpling comes out as a blank gold blob. The billboard face is the
-	-- same one the part-built dumplings already wear, so it matches.
+	-- Only reached when the variant could NOT keep the painted face (an old
+	-- Studio build with no Color on SurfaceAppearance). Normally the face
+	-- survives the coat and no billboard is needed.
 	if stripped and textureFace and FACE_SHAPES[shapeKey] == true then
 		attachFace(primaryPart, sparkle, footprint)
 	end
