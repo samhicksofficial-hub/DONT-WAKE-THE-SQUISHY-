@@ -13,9 +13,11 @@
 --       Alert (BillboardGui, red "!", shown while Chasing)
 --     ...visual mesh/primitive parts from SquishyModels.build (welded to Body)
 --
--- The giant's look comes from the real squishy roster: cfg.shape picks the
--- catalog shape, cfg.color tints it. Eyes/faces are baked into the meshes, so
--- the only "awake" cue is the Alert billboard.
+-- Each giant has its own imported model, picked by cfg.shape. cfg.color is only
+-- the fallback primitive's colour, used until that mesh is imported; a giant
+-- that BORROWS a collectable's shape sets cfg.tint to be painted instead.
+-- Eyes/faces are baked into the meshes, so the only "awake" cue is the Alert
+-- billboard.
 --
 -- Attributes on the Model (EnemyService owns): EnemyName, State
 -- ("Sleeping" | "Chasing" | "Returning"), TargetUserId (0 unless chasing).
@@ -101,7 +103,10 @@ local function buildEnemy(cfg: any, spawnPos: Vector3, parent: Instance): any
 		color = cfg.color,
 		sparkle = false,
 		scale = scale,
-		forceTint = true,
+		-- Opt-in, not always-on. A giant with its OWN imported model keeps the
+		-- texture it shipped with; only one BORROWING a collectable's shape
+		-- needs painting, so it never wears that collectable's stock texture.
+		forceTint = cfg.tint == true,
 	})
 
 	-- Humanoid keeps the root center at (HipHeight + rootSize.Y/2) above the

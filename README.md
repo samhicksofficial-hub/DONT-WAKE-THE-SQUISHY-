@@ -1,7 +1,7 @@
 # DONT WAKE THE SQUISHY!
 
 A "Don't Wake the Brainrots"-style Roblox game. A field of sleeping collectable
-**squishies** sits in the middle of the map, patrolled by two **giant squishies**.
+**squishies** sits in the middle of the map, patrolled by three **giant squishies**.
 Sneak in, grab one (rarer = more income but a heavier carry slowdown), and get it
 back to your plot without waking a giant — they notice you from further away when
 you're carrying, and a slap flings you and makes you drop it. Squishies placed on

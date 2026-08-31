@@ -590,7 +590,16 @@ function MapBuilder.Build(): Map
 		Vector3.new(-wpHalfX, GROUND_Y, wpHalfZ),
 		Vector3.new(-wpHalfX, GROUND_Y, 0),
 	}
-	local enemySpawns: { Vector3 } = { enemyWaypoints[1], enemyWaypoints[5] }
+	-- One spawn per giant, spread as evenly around the patrol ring as its
+	-- waypoints allow. Derived from the roster rather than hardcoded, so adding
+	-- a giant can never quietly stack two of them on the same corner (which is
+	-- what a fixed two-entry list did the moment there were three).
+	local enemySpawns: { Vector3 } = {}
+	local enemyCount = math.max(1, #(Config.Enemies :: { any }))
+	for index = 1, enemyCount do
+		local step = math.floor((index - 1) * #enemyWaypoints / enemyCount)
+		table.insert(enemySpawns, enemyWaypoints[step + 1])
+	end
 
 	-- Field props. They live on the EAST and WEST dirt border: the north and
 	-- south borders are the walkway-to-field lanes in front of the eight bases,

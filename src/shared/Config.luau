@@ -121,10 +121,13 @@ end
 -- The two giant patrolling enemies: monstrous versions of real squishies.
 -- `shape` + `color` (as tint) feed SquishyModels.build; `scale` is huge.
 Config.Enemies = {
+	-- The giants have their OWN imported models, so none of them set `tint`:
+	-- each keeps the texture it shipped with. `color` is only the fallback
+	-- primitive's colour, used until the meshes are imported.
 	{
-		name = "Mama Squish",
-		shape = "opalmesh",
-		color = Color3.fromRGB(255, 130, 180),
+		name = "Green Ghost",
+		shape = "ghostmesh",
+		color = Color3.fromRGB(126, 226, 148),
 		scale = 7,               -- body scale relative to a 1.0-scale squishy
 		patrolSpeed = 7,
 		chaseSpeed = 17,
@@ -137,9 +140,24 @@ Config.Enemies = {
 		sleepCooldown = 4,       -- seconds after returning before it can notice again
 	},
 	{
-		name = "Grumpo",
-		shape = "strawberrymesh",
-		color = Color3.fromRGB(150, 90, 220),
+		name = "Spooky Dumpling",
+		shape = "spookymesh",
+		color = Color3.fromRGB(196, 186, 216),
+		scale = 6,
+		patrolSpeed = 8,
+		chaseSpeed = 18,
+		noticeRadius = 25,
+		noticeRadiusCarrying = 38,
+		chaseDuration = 7,
+		slapRange = 7.5,
+		flingSpeed = 78,
+		stunTime = 1.2,
+		sleepCooldown = 3.5,
+	},
+	{
+		name = "Pink Monster",
+		shape = "monstermesh",
+		color = Color3.fromRGB(240, 130, 178),
 		scale = 5.5,
 		patrolSpeed = 9,
 		chaseSpeed = 19,

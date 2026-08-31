@@ -4,7 +4,7 @@ This file is the **binding contract** for all modules. If code disagrees with th
 
 ## Concept
 "Don't Wake the Brainrots"-style game. A central **field** is full of sleeping collectable
-**squishies** (blob plushies) of varying rarity. Two **giant enemy squishies** patrol the field
+**squishies** (blob plushies) of varying rarity. Three **giant enemy squishies** patrol the field
 asleep; each has a notice radius (larger if you're carrying). Wake one and it chases you and
 slaps you: you get flung and drop your carried squishy. Carry squishies back to your **plot**
 (safe zone) and stand them on pedestals; each placed squishy accrues $/s onto a green collect pad
@@ -33,7 +33,7 @@ To implement:
 - `src/server/EconomyService.luau`— leaderstats + Money attribute + AddMoney
 - `src/server/PlotService.luau`   — plot claiming/building, slots, placing, income accrual, collect pads
 - `src/server/SquishyService.luau`— field spawning, pickup/carry/drop, walkspeed ownership
-- `src/server/EnemyService.luau`  — 2 giants: patrol, notice, chase, slap
+- `src/server/EnemyService.luau`  — 3 giants: patrol, notice, chase, slap
 - `src/client/Hud.luau`           — top-center money HUD
 - `src/client/AlertUi.luau`       — chase warning vignette + carry slowdown indicator
 - `src/client/Popups.luau`        — floating "+$X" world popups from the Popup remote
@@ -69,7 +69,7 @@ passed to `Start` (avoids require cycles). Keep a local reference from Start.
   isInField: (pos: Vector3) -> boolean,  -- XZ containment test of the field rect
   squishySpawns: { Vector3 },  -- ground positions where field squishies may spawn
   enemyWaypoints: { Vector3 }, -- patrol loop (ordered, ground positions)
-  enemySpawns: { Vector3 },    -- exactly 2, ground positions
+  enemySpawns: { Vector3 },    -- one per Config.Enemies entry, spread round the patrol ring
   plotSpots: { CFrame },       -- 8 CFrames; position = plot center at ground, LookVector faces the field
 }
 ```
@@ -136,7 +136,7 @@ PlotService:
 - `GetPlotOrigin(player: Player) -> CFrame?` — the claimed plot spot CFrame (for respawn etc.)
 
 EnemyService:
-- `Start(services, map)` — builds both enemies from `Config.Enemies`, runs patrol/notice/chase.
+- `Start(services, map)` — builds every entry in `Config.Enemies`, runs patrol/notice/chase.
 
 ## Squishy catalog def shape (from `Config.Squishies` entries)
 ```lua
