@@ -1,5 +1,5 @@
 --!strict
--- EnemyService — the two giant squishies (Config.Enemies) that patrol the
+-- EnemyService — the giant squishies (Config.Enemies) that patrol the
 -- field asleep, notice nearby players, chase them, and slap them (fling +
 -- forced squishy drop). DESIGN.md rule 5 is the contract for this file.
 --
@@ -139,7 +139,15 @@ local function buildEnemy(cfg: any, spawnPos: Vector3, parent: Instance): any
 	body.Anchored = false
 	body.Massless = true
 	body.CanQuery = false
-	local bodyWeld = Instance.new("WeldConstraint")
+	-- A Weld rather than a WeldConstraint: a constraint locks in whatever
+	-- offset it saw at creation, while a Weld's C0 stays writable — and the
+	-- CLIENT's EnemyBounce module writes it to hop the visual. The server
+	-- itself never touches C0 after this: a server-written C0 would reach
+	-- players as ~20Hz property snaps with no interpolation, while a locally
+	-- written one is per-frame smooth. Identity C0/C1 means the same thing
+	-- the constraint meant: coincident with the root.
+	local bodyWeld = Instance.new("Weld")
+	bodyWeld.Name = "BodyWeld"
 	bodyWeld.Part0 = root
 	bodyWeld.Part1 = body
 	bodyWeld.Parent = body

@@ -255,6 +255,14 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
   not ship should be built the same way — a hand-styled approximation is what made
   this one the odd menu out.
 - `Popups.luau` — unchanged (world-space "+$X").
+- `EnemyBounce.luau` — the giants' hop animation. The server leaves each giant's
+  `BodyWeld` at identity and this module writes its C0 every render frame,
+  because a server-written Weld.C0 reaches players as ~20Hz uninterpolated
+  property snaps while a locally written one is per-frame smooth. Cadence is
+  distance-based from actual root displacement (smoothed ~0.1s); sleep-walking
+  giants hop, stationary sleepers breathe, stationary awake giants ease down —
+  and the stationary branches CONVERGE on their target rather than assign it,
+  so a giant stopping mid-hop never snaps.
 
 ## Progression services (server)
 - `UpgradeService` — `Start(services, map)`, `GetLevel(player, track) -> number`,
