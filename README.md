@@ -136,6 +136,11 @@ server fills as players join and empties as they leave. They are deliberately
 separate — anything left in `Plots` by hand is thrown away seconds into a play
 session, while the server only ever *reads* `PlotShells`.
 
+When the game starts the server moves `PlotShells` out of the Workspace into
+`ServerStorage`, because the shells sit at the same coordinates as the live
+plots and would otherwise render as a second, static copy of every base. It
+returns to the Workspace when you stop the playtest, so editing is unaffected.
+
 The tool ticks `HandEdited` on the folder. PlotService checks it and copies your
 saved building instead of generating one. Untick `HandEdited` to go back to
 generated bases without losing your edits.

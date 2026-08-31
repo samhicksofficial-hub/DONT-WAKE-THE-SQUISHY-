@@ -18,6 +18,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
@@ -997,10 +998,29 @@ end
 
 local SHELL_FOLDER = "PlotShells"
 local shellsMissingWarned = false
+local shellFolder: Instance? = nil
+
+-- The shells are a SOURCE, not scenery, and this moves them out of the world.
+--
+-- They have to be AUTHORED in Workspace — that is the only place you can edit
+-- them — but they are built at the very coordinates the live plots occupy, so
+-- left there at run time every base renders twice: a static shell z-fighting
+-- the live one, its frozen "$0" sitting on top of the real collect-pad total.
+-- Moving the folder to ServerStorage keeps it readable for cloning, stops it
+-- replicating to anyone, and leaves the Studio copy exactly where it is.
+local function claimShellFolder()
+	local inWorld = workspace:FindFirstChild(SHELL_FOLDER)
+	if inWorld ~= nil then
+		inWorld.Parent = ServerStorage
+		shellFolder = inWorld
+		return
+	end
+	shellFolder = ServerStorage:FindFirstChild(SHELL_FOLDER)
+end
 
 -- The saved shell for a spot, or nil if there is not a usable one.
 local function findSavedShell(spotIndex: number): Model?
-	local folder = workspace:FindFirstChild(SHELL_FOLDER)
+	local folder = shellFolder
 	if folder == nil or folder:GetAttribute("HandEdited") ~= true then
 		return nil
 	end
@@ -1637,6 +1657,9 @@ end
 function PlotService.Start(services: any, map: any)
 	servicesRef = services
 	mapRef = map
+	-- Before any plot is built: the shells must be out of the world by the time
+	-- anything clones them, or the world shows two of every base.
+	claimShellFolder()
 	popupRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Popup") :: RemoteEvent
 	spotUsed = table.create(#(map.plotSpots :: { CFrame }), false)
 

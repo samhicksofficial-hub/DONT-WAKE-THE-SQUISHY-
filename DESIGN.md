@@ -402,6 +402,13 @@ tiles, candy pads). Nothing is darker than a soft caramel; text uses
   ever reads `PlotShells` and copies out of it; it never writes there. Keeping
   them apart means a live plot being built, rebuilt or destroyed cannot touch
   what the owner has been editing.
+- **The folder leaves the Workspace at server start.** `claimShellFolder()`
+  reparents it to `ServerStorage` before the first plot is built. It has to be
+  AUTHORED in Workspace — that is the only place you can edit it — but the
+  shells stand at the very coordinates the live plots occupy, so left there
+  every base renders twice: a static shell z-fighting the live one, its frozen
+  "$0" sitting on top of the real collect-pad total. In ServerStorage it is
+  still readable for cloning and replicates to nobody.
 - **The split is still shell vs furniture.** An adopted shell replaces
   `BaseBuilder.Build` only. PlotService lays its own gameplay pieces (platforms,
   pads, plaques) on top exactly as before, so nothing runtime-owned is editable

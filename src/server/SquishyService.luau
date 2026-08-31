@@ -406,6 +406,19 @@ function SquishyService.ForceDrop(player: Player)
 			weld:Destroy()
 		end
 
+		-- Out of the character and back under SERVER authority before the move.
+		--
+		-- While a squishy is welded into the carrier's assembly, that player's
+		-- CLIENT owns its physics — and a CFrame the server writes to a part
+		-- the client still believes it owns is simply ignored there. The server
+		-- would have it on the ground while it hung at head height, forever, on
+		-- the screen of the one player who most needs to see it land. Reparent,
+		-- reclaim ownership (only legal while unanchored), THEN anchor and move.
+		model.Parent = mapRef.squishyFolder
+		pcall(function()
+			body:SetNetworkOwner(nil)
+		end)
+
 		body.Anchored = true
 		for _, descendant in model:GetDescendants() do
 			if descendant:IsA("BasePart") then
@@ -435,7 +448,6 @@ function SquishyService.ForceDrop(player: Player)
 		end
 
 		model:SetAttribute("State", "Sleeping")
-		model.Parent = mapRef.squishyFolder
 	end)
 	if not ok then
 		-- Model is unusable (destroyed with a character, etc.): make sure no
