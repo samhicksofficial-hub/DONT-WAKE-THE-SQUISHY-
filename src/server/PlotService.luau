@@ -2144,6 +2144,120 @@ function PlotService.DebugSetFloors(player: Player, above: number, below: number
 	return true
 end
 
+-- ------------------------------------------------------------- persistence --
+-- SaveService reads a plot through Export and puts it back through Import.
+-- Both sides speak in storeys RELATIVE TO THE GROUND FLOOR plus a position on
+-- that storey, never the global slot index: buying a basement renumbers every
+-- slot in the building, so an index saved before one was bought would point
+-- somewhere else entirely when it came back.
+
+-- Everything about a plot worth carrying between sessions.
+function PlotService.ExportPlot(player: Player): any?
+	local plot = plots[player]
+	if plot == nil then
+		return nil
+	end
+	local above, below = floorCounts(player)
+	local groundIndex = below + 1
+	local groundUnlocked = 0
+	local placed = {}
+	for _, slot in plot.slots do
+		if slot.isItemSlot then
+			continue -- basement stands hold gear, and gear is a game pass
+		end
+		if slot.isGroundFloor and slot.unlocked then
+			-- The ground floor sells its slots one at a time and always in
+			-- order, so the highest open position IS the count bought.
+			groundUnlocked = math.max(groundUnlocked, slot.slotOnFloor)
+		end
+		if slot.occupied and slot.squishy ~= nil then
+			local storey = math.floor((slot.index - 1) / (Config.Plot.SlotsPerRow * Config.Plot.RowsPerFloor)) + 1
+			table.insert(placed, {
+				floor = storey - groundIndex, -- 0 is the ground floor
+				position = slot.slotOnFloor,
+				name = slot.squishy:GetAttribute("SquishyName"),
+				variant = slot.squishy:GetAttribute("Variant"),
+				level = slot.level,
+				pending = slot.pending,
+			})
+		end
+	end
+	return {
+		floorsAbove = above,
+		floorsBelow = below,
+		groundUnlocked = groundUnlocked,
+		placed = placed,
+	}
+end
+
+-- Rebuilds a plot to a saved shape. Floors FIRST, because setting them
+-- re-cuts the building and renumbers every slot; only then can a saved
+-- (floor, position) pair be resolved to a slot that will still be there.
+function PlotService.ImportPlot(player: Player, data: any): (boolean, number)
+	if typeof(data) ~= "table" or plots[player] == nil then
+		return false, 0
+	end
+
+	local above = math.clamp(math.floor(tonumber(data.floorsAbove) or 0), 0, Config.Plot.MaxAbove :: number)
+	local below = math.clamp(math.floor(tonumber(data.floorsBelow) or 0), 0, Config.Plot.MaxBelow :: number)
+	local currentAbove, currentBelow = floorCounts(player)
+	if above ~= currentAbove or below ~= currentBelow then
+		player:SetAttribute("FloorsAbove", above)
+		player:SetAttribute("FloorsBelow", below)
+		rebuildPlot(player)
+	end
+
+	local plot = plots[player]
+	if plot == nil then
+		return false, 0 -- the rebuild failed; better that than a half-filled plot
+	end
+	local groundIndex = below + 1
+	local perFloor = (Config.Plot.SlotsPerRow :: number) * (Config.Plot.RowsPerFloor :: number)
+
+	-- Index the slots by the same (floor, position) pair Export writes.
+	local byPlace: { [string]: SlotRecord } = {}
+	for _, slot in plot.slots do
+		local storey = math.floor((slot.index - 1) / perFloor) + 1
+		byPlace[("%d:%d"):format(storey - groundIndex, slot.slotOnFloor)] = slot
+	end
+
+	local groundUnlocked = math.floor(tonumber(data.groundUnlocked) or 0)
+	for _, slot in plot.slots do
+		if slot.isGroundFloor and not slot.unlocked and not slot.isItemSlot and slot.slotOnFloor <= groundUnlocked then
+			-- unlockSlot, not a bare flag: setting `unlocked` alone leaves the
+			-- padlock standing and never builds a collect pad.
+			pcall(unlockSlot, plot, slot)
+		end
+	end
+
+	local restored = 0
+	for _, entry in (if typeof(data.placed) == "table" then data.placed else {}) do
+		if typeof(entry) ~= "table" then
+			continue
+		end
+		local def = Config.SquishyByName[entry.name]
+		local slot = byPlace[("%d:%d"):format(math.floor(tonumber(entry.floor) or 0), math.floor(tonumber(entry.position) or 0))]
+		-- A squishy retired from the catalog, or a slot that no longer exists
+		-- because the plot shrank, simply does not come back.
+		if def == nil or slot == nil or slot.isItemSlot or slot.occupied then
+			continue
+		end
+		if not slot.unlocked then
+			pcall(unlockSlot, plot, slot)
+		end
+		local defCopy = table.clone(def)
+		defCopy.variant = entry.variant
+		if pcall(placeSquishy, plot, slot, defCopy) then
+			slot.level = math.max(1, math.floor(tonumber(entry.level) or 1))
+			slot.pending = math.max(0, tonumber(entry.pending) or 0)
+			refreshSlotLevel(plot, slot)
+			updateCollectLabel(plot, slot)
+			restored += 1
+		end
+	end
+	return true, restored
+end
+
 -- What the dev panel prints in its status block.
 function PlotService.DebugSnapshot(player: Player): any
 	local plot = plots[player]

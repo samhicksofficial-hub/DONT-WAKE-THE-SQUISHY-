@@ -98,6 +98,23 @@ function UpgradeService.TryBuy(player: Player, track: string): boolean
 	return true
 end
 
+-- The track names, for callers that have to walk all of them (SaveService).
+function UpgradeService.Tracks(): { string }
+	return table.clone(TRACKS)
+end
+
+-- Restores a level without charging for it. SaveService only — every other
+-- route to a higher level goes through TryBuy and pays. Clamped to the track's
+-- own value list, so a profile saved before a track was shortened cannot push
+-- a player past the end of it.
+function UpgradeService.SetLevel(player: Player, track: string, level: number)
+	if not isTrack(track) or typeof(level) ~= "number" then
+		return
+	end
+	local values = trackData(track).values
+	player:SetAttribute(attributeName(track), math.clamp(math.floor(level), 1, #values))
+end
+
 -- Back to the free starting level on every track (called by RebirthService).
 function UpgradeService.ResetLevels(player: Player)
 	for _, track in TRACKS do

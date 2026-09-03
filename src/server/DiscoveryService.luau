@@ -107,6 +107,37 @@ function DiscoveryService.MarkDiscovered(player: Player, squishyName: string, va
 	end
 end
 
+-- The whole discovered set as a flat list of "Variant|Squishy" keys, for
+-- SaveService. The key format is this module's own business, so it round-trips
+-- through ImportKeys rather than being taken apart anywhere else.
+function DiscoveryService.ExportKeys(player: Player): { string }
+	local set = discovered[player]
+	local keys = {}
+	if set ~= nil then
+		for key in set do
+			table.insert(keys, key)
+		end
+		table.sort(keys) -- stable output, so an unchanged profile saves identically
+	end
+	return keys
+end
+
+-- Puts a saved set back and tells the client about it. Unknown keys are kept
+-- rather than dropped: a squishy retired from the catalog should not silently
+-- erase the page someone already filled in, and the index reads what it knows.
+function DiscoveryService.ImportKeys(player: Player, keys: { string })
+	if typeof(keys) ~= "table" then
+		return
+	end
+	local set = setFor(player)
+	for _, key in keys do
+		if typeof(key) == "string" and key ~= "" then
+			set[key] = true
+		end
+	end
+	pcall(sendFullSet, player)
+end
+
 function DiscoveryService.IsDiscovered(player: Player, squishyName: string, variantName: string?): boolean
 	local set = discovered[player]
 	return set ~= nil and set[keyFor(squishyName, variantName)] == true

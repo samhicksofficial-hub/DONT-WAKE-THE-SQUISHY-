@@ -39,6 +39,7 @@ services.ShopService = require(script.ShopService) :: any
 services.GearService = require(script.GearService) :: any
 services.StealService = require(script.StealService) :: any
 services.PortalService = require(script.PortalService) :: any
+services.SaveService = require(script.SaveService) :: any
 -- Studio only: its Start does nothing and publishes no remote elsewhere.
 services.DebugService = require(script.DebugService) :: any
 
@@ -71,6 +72,9 @@ for _, name in {
 	"StealService",
 	-- Needs the map root resolved and the saved props in place.
 	"PortalService",
+	-- LAST of the gameplay services: it reads a profile back through every one
+	-- of them, so they all have to be standing before it starts restoring.
+	"SaveService",
 	-- Truly last: the dev panel drives every service above through the
 	-- `services` table, so they all have to be up before it opens for business.
 	"DebugService",
