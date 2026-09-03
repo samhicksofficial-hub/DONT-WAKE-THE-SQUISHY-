@@ -176,7 +176,12 @@ commands.spawnField = function(_player, payload)
 	if Config.RarityByName[rarity] == nil then
 		return false, "unknown rarity"
 	end
-	local model = squishy.SpawnRarity(rarity)
+	-- NOT pickVariant: there nil means "Normal", because give and place treat
+	-- the absence of a variant as the plain coat. Here nil means "roll one", so
+	-- Normal has to travel by name or picking it would spawn a random coat.
+	local named = tostring(payload.variant)
+	local variant = if Config.VariantByName[named] ~= nil then named else nil
+	local model = squishy.SpawnRarity(rarity, variant)
 	if model == nil then
 		return false, ("field spawn of a %s failed"):format(rarity)
 	end

@@ -297,7 +297,34 @@ end
 -- Spawns one field squishy. `forcedRarity` skips the weighted roll (the timed
 -- guaranteed-rarity events use it) and `ignoreCap` lets an event land even when
 -- the field is already full.
-local function trySpawn(forcedRarity: string?, ignoreCap: boolean?)
+-- Wires a squishy's prompt to onPickup. EVERY pickupable squishy goes through
+-- here, not just field spawns.
+--
+-- This used to be written inline in trySpawn, which meant only a squishy the
+-- field spawned was ever pickupable. One handed out by the dev panel was built
+-- with a prompt reading "Pick Up" that was connected to nothing, so dropping it
+-- left an inert prop standing in the field for the rest of the round. The flag
+-- lives on the prompt rather than in a table keyed by the model, which would
+-- have held a strong reference to every squishy ever made.
+local function bindPickup(model: Model)
+	local body = model:FindFirstChild("Body")
+	local prompt = if body ~= nil then body:FindFirstChild("PickupPrompt") else nil
+	if prompt == nil or not prompt:IsA("ProximityPrompt") then
+		return
+	end
+	if prompt:GetAttribute("PickupBound") == true then
+		return
+	end
+	prompt:SetAttribute("PickupBound", true)
+	prompt.Triggered:Connect(function(triggeredBy: Player)
+		local ok, err = pcall(onPickup, triggeredBy, model)
+		if not ok then
+			warn(("[SquishyService] pickup failed: %s"):format(tostring(err)))
+		end
+	end)
+end
+
+local function trySpawn(forcedRarity: string?, ignoreCap: boolean?, forcedVariant: string?)
 	if not ignoreCap and freshCount >= Config.Field.MaxSquishies then
 		return nil
 	end
@@ -330,8 +357,11 @@ local function trySpawn(forcedRarity: string?, ignoreCap: boolean?)
 	end
 	local def = candidates[rng:NextInteger(1, #candidates)] :: any
 	-- Variant is rolled independently of which squishy came up, so any squishy
-	-- can turn up Gold or Rainbow.
-	local variant = Util.weightedRandom(Config.Variants, rng) :: any
+	-- can turn up Gold or Rainbow — unless a caller named one, which is how the
+	-- dev panel puts a chosen coat in the field to look at.
+	local variant = if forcedVariant ~= nil and Config.VariantByName[forcedVariant] ~= nil
+		then Config.VariantByName[forcedVariant] :: any
+		else Util.weightedRandom(Config.Variants, rng) :: any
 
 	local model = SquishyFactory.create(def.name, variant.name)
 	local point = spawns[spawnIndex]
@@ -346,25 +376,17 @@ local function trySpawn(forcedRarity: string?, ignoreCap: boolean?)
 		releaseFieldSpawn(model)
 	end)
 
-	local body = model:FindFirstChild("Body")
-	local prompt = if body ~= nil then body:FindFirstChild("PickupPrompt") else nil
-	if prompt ~= nil and prompt:IsA("ProximityPrompt") then
-		prompt.Triggered:Connect(function(triggeredBy: Player)
-			local ok, err = pcall(onPickup, triggeredBy, model)
-			if not ok then
-				warn(("[SquishyService] pickup failed: %s"):format(tostring(err)))
-			end
-		end)
-	end
+	bindPickup(model)
 
 	model.Parent = mapRef.squishyFolder
 	return model
 end
 
 -- Forces one squishy of `rarityName` into the field, ignoring the spawn cap.
--- EventService calls this when a guaranteed-rarity countdown lands.
-function SquishyService.SpawnRarity(rarityName: string): Model?
-	local ok, model = pcall(trySpawn, rarityName, true)
+-- EventService calls this when a guaranteed-rarity countdown lands, with no
+-- variant, so the coat still rolls. The dev panel names one.
+function SquishyService.SpawnRarity(rarityName: string, variantName: string?): Model?
+	local ok, model = pcall(trySpawn, rarityName, true, variantName)
 	if not ok then
 		warn(("[SquishyService] forced %s spawn failed: %s"):format(rarityName, tostring(model)))
 		return nil
@@ -583,6 +605,9 @@ function SquishyService.GiveCarried(player: Player, squishyName: string, variant
 	end
 	-- onPickup refuses anything that is not sitting in the field folder.
 	model.Parent = mapRef.squishyFolder
+	-- Bound BEFORE the pickup, so this squishy is still pickupable after the
+	-- player drops it again. Without it a dev-panel squishy was a one-way trip.
+	bindPickup(model)
 	local ok, err = pcall(onPickup, player, model)
 	if not ok then
 		warn(("[SquishyService] debug give failed: %s"):format(tostring(err)))
