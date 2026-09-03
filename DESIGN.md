@@ -254,7 +254,9 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
   and contextual hints via `UiRefs.notify`.
 - `Panels.luau` — wires Left column buttons to panels, Close buttons, Invite button
   (SocialService), and Wheel spin-count badge.
-- `IndexUi.luau` — fills `Index.Scrolling` from `Config.Squishies`, greying undiscovered.
+- `IndexUi.luau` — fills `Index.Scrolling` from `Config.Squishies`, greying
+  undiscovered, with one tab page per `Config.Variants` entry (per-variant
+  discovery, tinted previews, multiplied incomes).
 - `UpgradesUi.luau`, `RebirthUi.luau`, `WheelUi.luau` — drive their panels from the
   attributes below and fire the remotes.
 - `DailyUi.luau` — the seven-day login panel. The pack ships no daily frame, so this
@@ -285,9 +287,10 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
   (returns the winning `Config.Wheel.Rewards` index, or nil). Owns attributes
   `Spins` and `NextSpinAt` (os.time seconds). Grants cash / a squishy delivered to
   the player's plot / a timed speed boost.
-- `DiscoveryService` — `Start`, `MarkDiscovered(player, squishyName)`,
-  `IsDiscovered(player, squishyName) -> boolean`. Called by SquishyService on first
-  pickup. Replicates via the `Discovered` remote.
+- `DiscoveryService` — `Start`, `MarkDiscovered(player, squishyName, variantName?)`,
+  `IsDiscovered(player, squishyName, variantName?) -> boolean`. Keyed per
+  (squishy, variant); called by SquishyService on pickup and PlotService on
+  placement. Replicates via the `Discovered` remote.
 
 ## New player attributes (server writes, client reads)
 - `Upgrade_Speed`, `Upgrade_Stealth`, `Upgrade_Carry` — numbers, 1-based levels
@@ -300,7 +303,8 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 - `BuyUpgrade: RemoteEvent` — client→server `(track: string)`
 - `DoRebirth: RemoteEvent` — client→server
 - `Spin: RemoteFunction` — client→server, returns the winning reward index or nil
-- `Discovered: RemoteEvent` — server→client `(names: {string})` full set on join,
+- `Discovered: RemoteEvent` — server→client `(keys: {string})` full set on join,
+  each key `variant .. "|" .. name` (per-variant discovery; bare names = Normal),
   and `(name: string)` on each new discovery (client accepts both shapes)
 
 ## Cross-service effects of upgrades (who applies what)
@@ -367,8 +371,16 @@ An enclosed building, open at the front toward the field:
   owner's avatar via `Players:GetUserThumbnailAsync` (Size48x48, HeadShot) on an
   ImageLabel in a SurfaceGui, with their display name under it. Wrapped in
   pcall + task.spawn — a thumbnail fetch yields and must never block the build.
-- **Slot platforms**: grey squares with a lighter border, in the 2-row grid the
-  gameplay already uses.
+- **Slot platforms**: grey squares with a lighter border, in TWO LINES of five
+  hugging the side walls, every slot turned to face the clear centre aisle.
+  Collect pads and plaques sit aisle-side of their platform.
+- **Ladder**: one climbable wooden TrussPart column against the back wall,
+  running from the deepest floor to the top ceiling through a hatch in every
+  slab. It replaced the staircase.
+- **Item basement**: the single below-ground storey (Config.Plot.MaxBelow = 1)
+  carries ITEM STANDS instead of squishy slots — same platform and pedestal,
+  pale-blue tile, no pads, no prompts, nothing placeable. Gear models will
+  stand there later.
 - **Collect pads** keep their gameplay behaviour but render as flat rounded
   green pads (a cylinder is fine) sitting just above the floor.
 - **Spawn point**: an invisible anchored part named `SpawnPoint` at the front
@@ -425,8 +437,9 @@ tiles, candy pads). Nothing is darker than a soft caramel; text uses
 - **Storey heights are recomputed, never stored.** A shell records only
   `ShellSpotIndex`, `ShellFloorsAbove`, `ShellFloorsBelow`; `BaseBuilder.Adopt`
   recomputes the floor tops from those. One source of truth, no drift.
-- **A shell saved at a different floor count is refused.** Its walls, stairs and
-  slabs are cut for the floors it had, so `Adopt` returns nil and the generator
+- **A shell saved at a different floor count or layout version is refused.** Its
+  walls, ladder and slabs are cut for the floors it had (and `ShellLayoutVersion`
+  says which interior design cut them), so `Adopt` returns nil and the generator
   takes over for that plot. This is why buying a floor drops a plot back to
   generated geometry.
 - **Shells are saved unowned**, wearing the vacant sign with no house marker.

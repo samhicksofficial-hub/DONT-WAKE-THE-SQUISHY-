@@ -212,97 +212,56 @@ local function computeFloorTops(above: number, below: number)
 	ROOF_TOP = WALL_TOP + ROOF_T
 end
 
-local STAIR_W = Config.Base.StairWidth :: number
-local STAIR_STEPS = math.max(2, Config.Base.StairSteps :: number)
--- The stairwell runs up the left wall; the slab above leaves this much of the
--- left side open so there is a hole to climb through.
--- The flight is deeper now that the plot is: 24 studs of run over one storey
--- gives a ~30-degree climb instead of the old cramped 35, and the extra depth
--- lives in ground the slot rows never wanted.
-local STAIR_WELL_DEPTH = 24
--- Floor on the tread thickness, so a short storey never leaves paper treads.
-local MIN_TREAD_T = 0.6
-local RAIL_H = 3
+-- The ladder: one climbable wooden truss column against the back wall, running
+-- from the deepest floor to the top storey's ceiling, through a hatch cut in
+-- every slab it passes. It replaced the staircase, which ate a seven-stud lane
+-- out of every floor's slot space; the ladder costs a 6x5 hole at the back.
+local LADDER_W = 2 -- a TrussPart's cross-section must be exactly 2 x 2
+local HATCH_W = 6 -- hatch width in the slab, centred on the ladder
+local HATCH_DEPTH = 5 -- how far the hatch reaches forward of the back wall
+local LADDER_COLOR = Color3.fromRGB(164, 120, 78) -- warm wood, like the reference
 
--- One flight from `fromTop` up to `toTop`, hugging the left wall at the back.
--- Steps are plain anchored parts: a character walks up them with no jumping as
--- long as each riser stays under a stud or so.
-local function buildStairs(model: Model, baseCFrame: CFrame, level: number, fromTop: number, toTop: number)
-	local rise = (toTop - fromTop) / STAIR_STEPS
-	local run = STAIR_WELL_DEPTH / STAIR_STEPS
-	local stairX = -(HALF_WIDTH - WALL_T - STAIR_W / 2)
-	-- Climb from the back of the plot toward the front.
-	local startZ = HALF_DEPTH - WALL_T - run / 2
-
-	-- A tread slab each, NOT a solid block down to the storey floor.
-	--
-	-- Solid blocks filled the whole wedge above the floor, so the flight up to
-	-- the NEXT storey hung its own underside into this one: headroom measured
-	-- 12.0 studs at the bottom step and fell a stud per step to 1.0 at the top,
-	-- and a character wedged solid two thirds of the way up and could never
-	-- finish the climb. Treads are `run` deep at `run` spacing and `rise`
-	-- thick, so they still butt into one continuous stepped surface with no
-	-- gap to fall through, and every flight clears the one below by a storey.
-	local tread = math.max(rise, MIN_TREAD_T)
-	for step = 1, STAIR_STEPS do
-		local topY = fromTop + rise * step
-		newPart(
-			model,
-			("Stair%d_%d"):format(level, step),
-			Vector3.new(STAIR_W, tread, run),
-			baseCFrame * CFrame.new(stairX, topY - tread / 2, startZ - (step - 1) * run),
-			step % 2 == 0 and Palette.BaseTrim or Palette.BaseFloor,
-			Enum.Material.SmoothPlastic
-		)
-	end
-
-	-- A rail along the open side, pitched to follow the flight. It used to be a
-	-- level bar at the flight's mid-height, floating six studs over the bottom
-	-- step and buried inside the treads for the whole top half.
-	local climb = toTop - fromTop
-	newProp(
-		model,
-		("StairRail%d"):format(level),
-		Vector3.new(0.5, RAIL_H, math.sqrt(STAIR_WELL_DEPTH * STAIR_WELL_DEPTH + climb * climb)),
-		baseCFrame
-			* CFrame.new(
-				stairX + STAIR_W / 2,
-				fromTop + climb / 2 + RAIL_H / 2,
-				startZ - STAIR_WELL_DEPTH / 2 + run / 2
-			)
-			-- +Z is the back of the well, where the flight starts low.
-			* CFrame.Angles(math.atan2(climb, STAIR_WELL_DEPTH), 0, 0),
-		Palette.BaseTrim,
-		Enum.Material.SmoothPlastic
-	)
+-- TrussParts are natively climbable, so every storey is reachable by the same
+-- column with no jumping and no flight geometry at all. Only built when the
+-- base has more than one storey.
+local function buildLadder(model: Model, baseCFrame: CFrame)
+	local height = WALL_TOP - SHELL_BASE
+	local ladder = Instance.new("TrussPart")
+	ladder.Name = "Ladder"
+	ladder.Size = Vector3.new(LADDER_W, height, LADDER_W)
+	ladder.CFrame = baseCFrame * CFrame.new(0, SHELL_BASE + height / 2, HALF_DEPTH - WALL_T - LADDER_W / 2)
+	ladder.Color = LADDER_COLOR
+	ladder.Material = Enum.Material.Wood
+	ladder.Anchored = true
+	ladder.TopSurface = Enum.SurfaceType.Smooth
+	ladder.BottomSurface = Enum.SurfaceType.Smooth
+	ladder.Parent = model
 end
 
 -- The slab that is storey N's floor and storey N-1's ceiling. It covers the
--- footprint except the stairwell, which is left open to climb through.
+-- footprint except the ladder hatch at the back-centre, left open to climb
+-- through: one full-width piece forward of the hatch, and a strip either side.
 local function buildFloorSlab(model: Model, baseCFrame: CFrame, level: number, floorTop: number)
 	local slabY = floorTop - SLAB_T / 2
-	local stairSpan = STAIR_W + WALL_T
-	local mainWidth = FOOTPRINT.X - stairSpan
-	-- Main slab: everything to the right of the stairwell.
+	local frontDepth = FOOTPRINT.Y - WALL_T - HATCH_DEPTH
 	newPart(
 		model,
 		("FloorSlab%d"):format(level),
-		Vector3.new(mainWidth, SLAB_T, FOOTPRINT.Y),
-		baseCFrame * CFrame.new(stairSpan / 2, slabY, 0),
+		Vector3.new(FOOTPRINT.X, SLAB_T, frontDepth),
+		baseCFrame * CFrame.new(0, slabY, -(HALF_DEPTH - frontDepth / 2)),
 		Palette.BaseFloor,
 		Enum.Material.SmoothPlastic
 	)
-	-- The strip in front of the stairwell, so only the flight itself is open.
-	local frontDepth = FOOTPRINT.Y - STAIR_WELL_DEPTH - WALL_T
-	if frontDepth > 1 then
+	local stripW = (FOOTPRINT.X - HATCH_W) / 2
+	for _, side in { -1, 1 } do
 		newPart(
 			model,
-			("FloorSlab%dFront"):format(level),
-			Vector3.new(stairSpan, SLAB_T, frontDepth),
+			("FloorSlab%d%s"):format(level, side < 0 and "Left" or "Right"),
+			Vector3.new(stripW, SLAB_T, HATCH_DEPTH + WALL_T),
 			baseCFrame * CFrame.new(
-				-(FOOTPRINT.X - stairSpan) / 2,
+				side * (HATCH_W / 2 + stripW / 2),
 				slabY,
-				-(HALF_DEPTH - frontDepth / 2)
+				HALF_DEPTH - (HATCH_DEPTH + WALL_T) / 2
 			),
 			Palette.BaseFloor,
 			Enum.Material.SmoothPlastic
@@ -398,12 +357,16 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		Enum.Material.SmoothPlastic
 	)
 
-	-- Upper storeys: a floor slab with a stairwell hole, a flight up to it, and
-	-- a trim band on the outside marking the storey line.
+	-- One ladder serves every storey, so it stands outside the per-level loop.
+	if FLOORS > 1 then
+		buildLadder(model, baseCFrame)
+	end
+
+	-- Upper storeys: a floor slab with a ladder hatch, and a trim band on the
+	-- outside marking the storey line.
 	for level = 2, FLOORS do
 		local floorTop = FLOOR_TOPS[level]
 		buildFloorSlab(model, baseCFrame, level, floorTop)
-		buildStairs(model, baseCFrame, level, FLOOR_TOPS[level - 1], floorTop)
 
 		-- A BAND, not a lid. This used to be one slab the size of the whole
 		-- floor plan, which did three things it was never meant to: it sealed
@@ -814,6 +777,13 @@ end
 
 -- Said once, not once per plot: eight identical warnings is noise.
 local footprintWarned = false
+local layoutWarned = false
+
+-- Bumped whenever the generated interior changes shape enough that a saved
+-- shell would bring the OLD geometry back (slot furniture is reused by name,
+-- so stale furniture means stale positions). Version 2 is the ladder-and-
+-- wall-lines layout that replaced the staircase.
+local SHELL_LAYOUT_VERSION = 2
 
 -- Attributes stamped on a saved shell by tools/build_plots_in_studio.luau.
 -- The storey heights are NOT stored: they are a pure function of the floor
@@ -829,6 +799,8 @@ BaseBuilder.ShellAttributes = {
 	-- lets Adopt refuse it and say why, instead of building something broken.
 	FootprintX = "ShellFootprintX",
 	FootprintY = "ShellFootprintY",
+	-- Which interior layout the shell was cut for (see SHELL_LAYOUT_VERSION).
+	LayoutVersion = "ShellLayoutVersion",
 }
 
 -- Stamps a freshly built shell so it can be recognised and reused after being
@@ -840,6 +812,7 @@ function BaseBuilder.TagShell(model: Model, spotIndex: number, floors: { above: 
 	model:SetAttribute(attrs.FloorsBelow, floors and floors.below or 0)
 	model:SetAttribute(attrs.FootprintX, FOOTPRINT.X)
 	model:SetAttribute(attrs.FootprintY, FOOTPRINT.Y)
+	model:SetAttribute(attrs.LayoutVersion, SHELL_LAYOUT_VERSION)
 end
 
 -- Reads a saved shell back into the same BaseShell the generator returns, so
@@ -856,6 +829,20 @@ function BaseBuilder.Adopt(model: Model, floors: { above: number, below: number 
 	local savedAbove = tonumber(model:GetAttribute(attrs.FloorsAbove)) or 0
 	local savedBelow = tonumber(model:GetAttribute(attrs.FloorsBelow)) or 0
 	if savedAbove ~= wantAbove or savedBelow ~= wantBelow then
+		return nil
+	end
+
+	-- A shell cut for an older interior would resurrect it: stairs where the
+	-- ladder belongs, slot furniture reused by name at the old positions. Only
+	-- a shell saved under the current layout may stand in for the generator.
+	local savedLayout = tonumber(model:GetAttribute(attrs.LayoutVersion)) or 1
+	if savedLayout ~= SHELL_LAYOUT_VERSION then
+		if not layoutWarned then
+			layoutWarned = true
+			warn(
+				"[BaseBuilder] the saved plot shells predate the ladder-and-wall-lines layout, so they were ignored and the bases generated instead. Re-run tools/build_plots_in_studio.luau to re-save them."
+			)
+		end
 		return nil
 	end
 

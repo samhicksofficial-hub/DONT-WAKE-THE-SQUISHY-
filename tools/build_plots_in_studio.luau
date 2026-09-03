@@ -18,7 +18,7 @@
 -- pedestals and collect pads into them.
 --
 -- WHAT THE SERVER TAKES FROM A SHELL. Everything you see: floor, walls, roof,
--- windows, ceiling lights, stairs, the spawn point, AND the slot furniture —
+-- windows, ceiling lights, the ladder, the spawn point, AND the slot furniture —
 -- the tile borders, platforms, pedestals and collect pads. Move a pillar or a
 -- collect pad here and it moves in the live game.
 --

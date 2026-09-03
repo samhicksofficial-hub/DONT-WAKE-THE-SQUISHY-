@@ -103,14 +103,26 @@ end
 -- A variant is the SAME squishy wearing a rarer coat: it keeps the shape and
 -- the rarity, multiplies the income, and gets an unmistakable effect. Rolled
 -- independently of which squishy you get, so any squishy can turn up golden.
---   effect: how SquishyModels dresses it — "none" | "gold" | "rainbow"
+-- Ordered commonest first; the index shows one page per entry in this order.
+--   effect: how SquishyModels dresses it — "none" | "gold" | "rainbow", or a
+--           one-coat treatment ("diamond" | "galaxy" | "undead" | "frozen")
 --   weight: roll chance against every other variant
 --   income: income multiplier
+--   color:  the label/tab colour (Rainbow has none: its label stays white and
+--           its tab wears a gradient instead of a tint)
 Config.Variants = {
-	{ name = "Normal",  effect = "none",    weight = 880, income = 1,  prefix = "" },
-	{ name = "Gold",    effect = "gold",    weight = 100, income = 5,  prefix = "Gold ",
+	{ name = "Normal",  effect = "none",    weight = 858, income = 1,   prefix = "" },
+	{ name = "Gold",    effect = "gold",    weight = 90,  income = 5,   prefix = "Gold ",
 		color = Color3.fromRGB(255, 206, 74) },
-	{ name = "Rainbow", effect = "rainbow", weight = 20,  income = 25, prefix = "Rainbow " },
+	{ name = "Diamond", effect = "diamond", weight = 30,  income = 10,  prefix = "Diamond ",
+		color = Color3.fromRGB(158, 224, 255) },
+	{ name = "Rainbow", effect = "rainbow", weight = 14,  income = 25,  prefix = "Rainbow " },
+	{ name = "Galaxy",  effect = "galaxy",  weight = 5,   income = 50,  prefix = "Galaxy ",
+		color = Color3.fromRGB(148, 106, 245) },
+	{ name = "Undead",  effect = "undead",  weight = 2,   income = 75,  prefix = "Undead ",
+		color = Color3.fromRGB(132, 196, 92) },
+	{ name = "Frozen",  effect = "frozen",  weight = 1,   income = 120, prefix = "Frozen ",
+		color = Color3.fromRGB(196, 238, 255) },
 }
 
 Config.VariantByName = {} :: { [string]: any }
@@ -199,11 +211,9 @@ Config.Base = {
 	WindowHeight = 5,
 	WindowSill = 5,        -- height of the window's bottom edge above its floor
 	CeilingLights = 4,     -- per storey
-	-- Staircase up the left side of the plot, hugging the wall.
-	StairWidth = 7,
-	-- 13 shallow steps rather than 11 steep ones: the flight has the depth for
-	-- it now, and a ~30-degree climb reads as a staircase instead of a ladder.
-	StairSteps = 13,
+	-- Storeys are linked by a climbable wooden ladder against the back wall
+	-- (see BaseBuilder). The old staircase ate a seven-stud lane out of every
+	-- floor; the ladder needs only a hatch in each slab.
 }
 
 -- Cozy / ASMR-obby palette: milky pastels and food colours, nothing darker
@@ -378,13 +388,16 @@ Config.Products = {
 Config.Plot = {
 	Count = 8,                -- plot spots around the field
 	-- Floors are BOUGHT. Everyone starts with the ground floor; up to MaxAbove
-	-- storeys can be added on top and MaxBelow basements dug underneath, each
-	-- one dearer than the last. A bought floor arrives with all its slots open.
+	-- storeys can be added on top, each dearer than the last. A bought floor
+	-- arrives with all its slots open.
 	MaxAbove = 4,
-	MaxBelow = 4,
+	-- The single basement is the ITEMS floor: its stands hold gear rather than
+	-- squishies (PlotService builds them as item slots, no placing, no income).
+	MaxBelow = 1,
 	-- Price of the Nth extra floor, counting both directions together, so the
-	-- eighth floor costs the same whichever way you grew.
-	FloorPrices = { 500e3, 6e6, 75e6, 900e6, 11e9, 140e9, 1.7e12, 20e12 },
+	-- last floor costs the same whichever way you grew. Five entries because
+	-- MaxAbove + MaxBelow is five.
+	FloorPrices = { 500e3, 6e6, 75e6, 900e6, 11e9 },
 	SlotsPerRow = 5,
 	RowsPerFloor = 2,
 	-- Slots on ONE floor. The ground floor sells its slots individually (the

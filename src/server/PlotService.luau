@@ -10,11 +10,16 @@
 -- then lays its own pieces on the floor top BaseBuilder reports.
 --
 -- Plot local space (the spot CFrame's LookVector faces the field, so -Z is
--- the plot FRONT toward the walkway and +Z is the BACK):
---   z =  -5   front-row collect pads    z =  1   front-row platforms (slots 1-5)
---   z =   7   back-row collect pads     z = 13   back-row platforms  (slots 6-10)
--- The front row is staggered +4 studs in X so the back row's pads stay
--- reachable between the front platforms.
+-- the plot FRONT toward the walkway and +Z is the BACK). The slots stand in
+-- TWO LINES hugging the side walls — slots 1-5 along the left wall, 6-10 along
+-- the right — every one turned to face the clear centre aisle, with its
+-- collect pad and plaque in front of it toward the aisle. The ladder to the
+-- other storeys is at the back-centre, the spawn at the front-centre, and the
+-- aisle between the pads stays walkable end to end.
+--
+-- Each slot's furniture is laid out in the slot's OWN frame (local -Z toward
+-- the aisle), so "in front of the platform" is one rule that holds on both
+-- sides; see slotLayout and slotFrame.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,19 +37,18 @@ local Palette = Config.Palette
 local DEFAULT_FLOOR_TOP = Config.Base.FloorTop :: number
 local TOUCH_DEBOUNCE = 0.4
 
--- Slot grid. The plot is 56 wide with 1.5-stud walls, and the staircase eats
--- the leftmost 7 studs plus its rail — so the space the slots actually get is
--- x = -19.25 .. 26.5, centred on +3.6, NOT on the middle of the room. Offset
--- them onto that centre and the back row stops crowding the stair rail while
--- the whole grid still reads as centred in the space you can walk in.
-local SLOT_SPACING = 9 -- 3 clear studs between neighbouring platforms
-local SLOT_X_OFFSET = 3.6 -- centre of the floor left over beside the stairs
-local FRONT_ROW_Z = 1
--- Deep enough that the back row's collect pad clears the front row's platform
--- without staggering the rows sideways (the old stagger pushed the right-hand
--- column into the wall once the grid moved off centre).
-local ROW_DEPTH = 14
+-- Slot grid: two lines of five, one along each side wall, facing each other
+-- across the aisle. Spacing runs along Z (the plot's depth); the lines sit a
+-- touch back of centre so the front stays clear around the spawn point.
+local SLOT_SPACING = 9 -- centre-to-centre along a wall line
+local LINE_Z_CENTER = 2
 local PLATFORM_SIZE = Vector3.new(6, 0.4, 6)
+-- Platform centre distance from the plot midline: snug to the wall's inner
+-- face with a one-stud gap so nothing clips through it.
+local LINE_X = (Config.Plot.BaseSize :: Vector2).X / 2
+	- (Config.Base.WallThickness :: number)
+	- PLATFORM_SIZE.X / 2
+	- 1
 local PLATFORM_BORDER_OVERHANG = 1.2 -- darker slab under each platform, per side x2
 local PLATFORM_BORDER_THICKNESS = 0.35
 local PAD_DIAMETER = 5
@@ -87,9 +91,11 @@ type SlotRecord = {
 	index: number,
 	localX: number,
 	localZ: number,
+	yaw: number,            -- the slot faces the aisle; see slotLayout
 	floorTop: number,       -- the storey this slot stands on
 	slotOnFloor: number,    -- 1..SlotsPerFloor position within its own storey
 	isGroundFloor: boolean, -- ground floor sells its slots one at a time
+	isItemSlot: boolean,    -- basement stand: holds gear, never a squishy
 	unlocked: boolean,
 	occupied: boolean,
 	income: number,
@@ -319,8 +325,10 @@ export type SlotLayout = {
 	floorTop: number,
 	localX: number,
 	localZ: number,
+	yaw: number, -- turns the slot so its local -Z faces the centre aisle
 	slotOnFloor: number,
 	isGroundFloor: boolean,
+	isItemFloor: boolean, -- a basement storey: item stands, never squishies
 }
 
 local function slotLayout(index: number, floorTops: { number }, groundIndex: number, fallbackTop: number): SlotLayout
@@ -330,15 +338,35 @@ local function slotLayout(index: number, floorTops: { number }, groundIndex: num
 
 	local floorIndex = math.floor((index - 1) / slotsPerFloor)
 	local withinFloor = (index - 1) % slotsPerFloor
+	-- Row 0 is the line along the LEFT wall, row 1 the right; both face the
+	-- aisle, so their furniture mirrors rather than repeats.
 	local row = math.floor(withinFloor / slotsPerRow)
 	local col = withinFloor % slotsPerRow
+	local side = if row == 0 then -1 else 1
 	return {
 		floorTop = floorTops[floorIndex + 1] or fallbackTop,
-		localX = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING + SLOT_X_OFFSET,
-		localZ = FRONT_ROW_Z + row * ROW_DEPTH,
+		localX = side * LINE_X,
+		localZ = (col - (slotsPerRow - 1) / 2) * SLOT_SPACING + LINE_Z_CENTER,
+		-- Local -Z must point at the aisle: rotating by yaw maps -Z onto
+		-- (-sin yaw, 0, -cos yaw), so the left line takes -90 degrees (-Z
+		-- becomes the base's +X) and the right line +90.
+		yaw = side * math.rad(90),
 		slotOnFloor = withinFloor + 1,
 		isGroundFloor = (floorIndex + 1) == groundIndex,
+		isItemFloor = (floorIndex + 1) < groundIndex,
 	}
+end
+
+-- The slot's own frame at floor level y=0: origin under the platform centre,
+-- -Z toward the aisle. Everything a slot owns is placed in this frame, which
+-- is what lets the two mirrored lines share every construction rule.
+local function slotFrame(baseCFrame: CFrame, layout: SlotLayout): CFrame
+	return baseCFrame * CFrame.new(layout.localX, 0, layout.localZ) * CFrame.Angles(0, layout.yaw, 0)
+end
+
+-- Same frame recovered from a live slot record.
+local function slotRecordFrame(plot: PlotRecord, slot: SlotRecord): CFrame
+	return plot.baseCFrame * CFrame.new(slot.localX, 0, slot.localZ) * CFrame.Angles(0, slot.yaw, 0)
 end
 
 -- A part already sitting in the model under this name — furniture inherited
@@ -414,7 +442,8 @@ end
 
 local function findFreeSlot(plot: PlotRecord): SlotRecord?
 	for _, slot in plot.slots do
-		if slot.unlocked and not slot.occupied then
+		-- Item stands are open but never take a squishy.
+		if slot.unlocked and not slot.occupied and not slot.isItemSlot then
 			return slot
 		end
 	end
@@ -456,9 +485,11 @@ end
 -- Builds just the collect pad's geometry — the green disc and the darker rim
 -- under it. Split out so the plot tool can put the same discs into a saved
 -- shell, where the owner can see and move them.
-local function buildCollectPadGeometry(parent: Instance, baseCFrame: CFrame, index: number, layoutFloorTop: number, localX: number, localZ: number): BasePart
-	local cf = baseCFrame
-		* CFrame.new(localX, layoutFloorTop + PAD_LIFT + PAD_THICKNESS / 2, localZ - PAD_FORWARD)
+-- `frame` is the slot's own frame at floor level (slotFrame / slotRecordFrame):
+-- the pad sits PAD_FORWARD along its -Z, which is toward the aisle.
+local function buildCollectPadGeometry(parent: Instance, frame: CFrame, index: number, layoutFloorTop: number): BasePart
+	local cf = frame
+		* CFrame.new(0, layoutFloorTop + PAD_LIFT + PAD_THICKNESS / 2, -PAD_FORWARD)
 		* PAD_UPRIGHT
 	-- Matte, not Neon: a neon pad blows out to white and loses the green
 	-- entirely, which is what made these read as pale discs.
@@ -478,8 +509,8 @@ local function buildCollectPadGeometry(parent: Instance, baseCFrame: CFrame, ind
 		pad,
 		"Rim",
 		Vector3.new(PAD_RIM_THICKNESS, PAD_DIAMETER + PAD_RIM_EXTRA, PAD_DIAMETER + PAD_RIM_EXTRA),
-		baseCFrame
-			* CFrame.new(localX, layoutFloorTop + PAD_RIM_THICKNESS / 2, localZ - PAD_FORWARD)
+		frame
+			* CFrame.new(0, layoutFloorTop + PAD_RIM_THICKNESS / 2, -PAD_FORWARD)
 			* PAD_UPRIGHT,
 		Palette.SlotBorder,
 		Enum.Material.SmoothPlastic
@@ -537,7 +568,7 @@ local function createCollectPad(plot: PlotRecord, slot: SlotRecord)
 	-- a plot without one builds a fresh disc.
 	local pad = existingPart(plot.model, "CollectPad" .. tostring(slot.index))
 	if pad == nil then
-		pad = buildCollectPadGeometry(plot.model, plot.baseCFrame, slot.index, slot.floorTop, slot.localX, slot.localZ)
+		pad = buildCollectPadGeometry(plot.model, slotRecordFrame(plot, slot), slot.index, slot.floorTop)
 	else
 		-- Locked slots park their inherited pad out of sight (see the slot
 		-- loop); unlocking brings it back.
@@ -615,8 +646,8 @@ end
 -- Created hidden/inactive for every locked slot; only the next locked slot's
 -- pad is revealed via revealUnlockPad.
 local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
-	local cf = plot.baseCFrame
-		* CFrame.new(slot.localX, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, slot.localZ - PAD_FORWARD)
+	local cf = slotRecordFrame(plot, slot)
+		* CFrame.new(0, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, -PAD_FORWARD)
 		* PAD_UPRIGHT
 	local pad = newPart(
 		plot.model,
@@ -842,11 +873,11 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 			plot.model,
 			"UpgradePad" .. tostring(slot.index),
 			Vector3.new(UPGRADE_PLAQUE_SIZE.X, UPGRADE_PLAQUE_SIZE.Y, 0.35),
-			plot.baseCFrame
+			slotRecordFrame(plot, slot)
 				* CFrame.new(
-					slot.localX,
+					0,
 					platformTop + UPGRADE_PLAQUE_SIZE.Y / 2 + PLAQUE_STAND_OFF,
-					slot.localZ - PLATFORM_SIZE.Z / 2 - PLAQUE_FRONT_OFFSET
+					-(PLATFORM_SIZE.Z / 2 + PLAQUE_FRONT_OFFSET)
 				),
 			PLAQUE_YELLOW,
 			Enum.Material.SmoothPlastic
@@ -936,6 +967,13 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	slot.pending = 0
 	slot.level = 1
 	slot.rarity = (model:GetAttribute("Rarity") :: string?) or "Common"
+	-- A squishy that lands on the plot without ever being carried (a wheel
+	-- prize, a steal) still counts as found, variant page and all.
+	if servicesRef ~= nil and servicesRef.DiscoveryService ~= nil then
+		pcall(function()
+			servicesRef.DiscoveryService.MarkDiscovered(plot.player, def.name, def.variant)
+		end)
+	end
 	-- Level 1 income is what the factory stamped (variant multiplier included);
 	-- every level after that is derived from it.
 	slot.baseIncome = (model:GetAttribute("Income") :: number?) or 0
@@ -1289,10 +1327,12 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 	for index = 1, totalSlots do
 		local layout = slotLayout(index, floorTops, groundIndex, floorTop)
 		local slotFloorTop = layout.floorTop
-		local localX = layout.localX
-		local localZ = layout.localZ
+		local frame = slotFrame(baseCFrame, layout)
+		local isItem = layout.isItemFloor
 		-- Ground floor: the usual staged unlock. Any other floor was paid for
-		-- as a whole, so every slot on it is open from the moment it exists.
+		-- as a whole, so every slot on it is open from the moment it exists —
+		-- including the basement's item stands, which are "open" but never
+		-- placeable (isItemSlot keeps them out of findFreeSlot).
 		local unlocked = if layout.isGroundFloor
 			then layout.slotOnFloor <= (Config.Plot.StartUnlocked :: number)
 			else true
@@ -1309,7 +1349,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 					PLATFORM_BORDER_THICKNESS,
 					PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
 				),
-				baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS / 2, localZ),
+				frame * CFrame.new(0, slotFloorTop + PLATFORM_BORDER_THICKNESS / 2, 0),
 				Palette.SlotBorder,
 				Enum.Material.SmoothPlastic
 			)
@@ -1321,14 +1361,17 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 				model,
 				"SlotPlatform" .. tostring(index),
 				PLATFORM_SIZE,
-				baseCFrame
-					* CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, localZ),
+				frame * CFrame.new(0, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, 0),
 				Palette.SlotPlatform,
 				Enum.Material.SmoothPlastic
 			)
 		-- Colour always comes from code, edited shell or not: it is how a locked
 		-- slot is told apart from an open one, which is gameplay, not decoration.
-		platform.Color = unlocked and Palette.SlotPlatform or Palette.SlotBorder
+		-- Item stands take the cool pastel so the basement reads as a different
+		-- kind of floor the moment you climb down into it.
+		platform.Color = if isItem
+			then Palette.SafeZone
+			else (unlocked and Palette.SlotPlatform or Palette.SlotBorder)
 
 		-- The column stands on every slot, taken or not: an empty one reads as
 		-- a place a squishy belongs rather than a bare tile.
@@ -1337,7 +1380,7 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			local built, top = pcall(
 				buildPedestal,
 				model,
-				baseCFrame * CFrame.new(localX, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, localZ),
+				frame * CFrame.new(0, slotFloorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, 0),
 				index
 			)
 			pedestalTop = if built then top else nil
@@ -1364,11 +1407,13 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 
 		local slot: SlotRecord = {
 			index = index,
-			localX = localX,
-			localZ = localZ,
+			localX = layout.localX,
+			localZ = layout.localZ,
+			yaw = layout.yaw,
 			floorTop = slotFloorTop,
 			slotOnFloor = layout.slotOnFloor,
 			isGroundFloor = layout.isGroundFloor,
+			isItemSlot = isItem,
 			unlocked = unlocked,
 			occupied = false,
 			income = 0,
@@ -1393,11 +1438,27 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 			pedestalTop = pedestalTop,
 		}
 		plot.slots[index] = slot
-		createPlacePrompt(plot, slot)
-		if unlocked then
-			createCollectPad(plot, slot)
+		if isItem then
+			-- An item stand: the platform and pedestal only. No place prompt,
+			-- no collect pad, no unlock pad — the gear that will stand here is
+			-- coming, so for now a small board says what the spot is for.
+			local top = pedestalTop
+			if top ~= nil then
+				local gui = newBillboard(top, "ItemStandGui", 5, 2.4, 2.4, 60)
+				local layoutGui = Instance.new("UIListLayout")
+				layoutGui.FillDirection = Enum.FillDirection.Vertical
+				layoutGui.HorizontalAlignment = Enum.HorizontalAlignment.Center
+				layoutGui.Parent = gui
+				newLabel(gui, "Item Stand", COLOR_WHITE, 1, 0.5)
+				newLabel(gui, "coming soon", Palette.SafeZone, 2, 0.34)
+			end
 		else
-			createUnlockPad(plot, slot)
+			createPlacePrompt(plot, slot)
+			if unlocked then
+				createCollectPad(plot, slot)
+			else
+				createUnlockPad(plot, slot)
+			end
 		end
 	end
 
@@ -1535,7 +1596,7 @@ local function rebuildPlot(player: Player)
 		if entry == nil then
 			break
 		end
-		if slot.unlocked and not slot.occupied and entry.squishyName ~= nil then
+		if slot.unlocked and not slot.occupied and not slot.isItemSlot and entry.squishyName ~= nil then
 			local def = Config.SquishyByName[entry.squishyName]
 			if def ~= nil then
 				local defCopy = table.clone(def)
@@ -1562,7 +1623,9 @@ function buildFloorPrompt(plot: PlotRecord)
 		plot.model,
 		"FloorUnlock",
 		Vector3.new(5, 6, 2),
-		plot.baseCFrame * CFrame.new(footprint.X / 2 - 6, plot.floorTop + 3, footprint.Y / 2 - 4),
+		-- Beside the ladder at the back of the aisle: the wall lines took the
+		-- old right-back corner, and next-floor belongs next to the way up.
+		plot.baseCFrame * CFrame.new(8, plot.floorTop + 3, footprint.Y / 2 - 4),
 		Palette.UnlockPad,
 		Enum.Material.Neon
 	)
@@ -1862,6 +1925,7 @@ function PlotService.BuildSlotFurniture(model: Model, baseCFrame: CFrame, floorT
 
 	for index = 1, slotsPerFloor * #floorTops do
 		local layout = slotLayout(index, floorTops, groundIndex, fallbackTop)
+		local frame = slotFrame(baseCFrame, layout)
 		local tag = tostring(index)
 
 		local border = newPart(
@@ -1872,7 +1936,7 @@ function PlotService.BuildSlotFurniture(model: Model, baseCFrame: CFrame, floorT
 				PLATFORM_BORDER_THICKNESS,
 				PLATFORM_SIZE.Z + PLATFORM_BORDER_OVERHANG
 			),
-			baseCFrame * CFrame.new(layout.localX, layout.floorTop + PLATFORM_BORDER_THICKNESS / 2, layout.localZ),
+			frame * CFrame.new(0, layout.floorTop + PLATFORM_BORDER_THICKNESS / 2, 0),
 			Palette.SlotBorder,
 			Enum.Material.SmoothPlastic
 		)
@@ -1884,25 +1948,22 @@ function PlotService.BuildSlotFurniture(model: Model, baseCFrame: CFrame, floorT
 			model,
 			"SlotPlatform" .. tag,
 			PLATFORM_SIZE,
-			baseCFrame
-				* CFrame.new(
-					layout.localX,
-					layout.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2,
-					layout.localZ
-				),
+			frame * CFrame.new(0, layout.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y / 2, 0),
 			Palette.SlotPlatform,
 			Enum.Material.SmoothPlastic
 		)
 
 		buildPedestal(
 			model,
-			baseCFrame
-				* CFrame.new(layout.localX, layout.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, layout.localZ),
+			frame * CFrame.new(0, layout.floorTop + PLATFORM_BORDER_THICKNESS + PLATFORM_SIZE.Y, 0),
 			index
 		)
 
-		local pad = buildCollectPadGeometry(model, baseCFrame, index, layout.floorTop, layout.localX, layout.localZ)
-		ensurePendingLabel(pad)
+		-- Item floors keep their stands bare: no collect pad to inherit.
+		if not layout.isItemFloor then
+			local pad = buildCollectPadGeometry(model, frame, index, layout.floorTop)
+			ensurePendingLabel(pad)
+		end
 	end
 end
 
@@ -1970,8 +2031,14 @@ function PlotService.DebugSnapshot(player: Player): any
 	if plot == nil then
 		return nil
 	end
-	local unlocked, occupied, income, pending = 0, 0, 0, 0
+	-- Item stands are counted apart: "open slots" means places a squishy can go.
+	local slots, unlocked, occupied, income, pending, itemSlots = 0, 0, 0, 0, 0, 0
 	for _, slot in plot.slots do
+		if slot.isItemSlot then
+			itemSlots += 1
+			continue
+		end
+		slots += 1
 		if slot.unlocked then
 			unlocked += 1
 		end
@@ -1984,7 +2051,8 @@ function PlotService.DebugSnapshot(player: Player): any
 	local above, below = floorCounts(player)
 	return {
 		spotIndex = plot.spotIndex,
-		slots = #plot.slots,
+		slots = slots,
+		itemSlots = itemSlots,
 		unlocked = unlocked,
 		occupied = occupied,
 		income = income,

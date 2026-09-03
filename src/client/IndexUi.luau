@@ -1,13 +1,21 @@
 --!strict
--- IndexUi — the squishy collection index.
+-- IndexUi — the squishy collection index, one PAGE PER VARIANT.
 --
 -- The pack's Frames.Index.Scrolling ships a UIGridLayout and no entry
 -- template, so the cards are built here, sized from the grid's own CellSize
 -- and styled to match the pack (dark rounded card, thick stroke, bubbly text).
 -- One card per Config.Squishies entry, ordered by rarity then catalog order.
 --
--- Discovery arrives on the `Discovered` remote in two shapes (DESIGN.md):
--- an array of names on join/respawn, and a single name on each new find.
+-- The tab column down the panel's side holds one button per Config.Variants
+-- entry. Picking a tab repaints the SAME cards for that variant: the preview
+-- wears the variant's coat, the name takes its prefix, the income takes its
+-- multiplier, and discovery is judged per (squishy, variant) — finding a Gold
+-- fills the Gold page, not the Normal one. The pack ships styled pills for
+-- Normal/Golden/Diamond; the other variants clone the Normal pill and tint it.
+--
+-- Discovery arrives on the `Discovered` remote in two shapes (DESIGN.md): an
+-- array of keys on join/respawn and a single key on each new find, each key
+-- `variant .. "|" .. name` (a bare name with no "|" counts as Normal).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -51,8 +59,10 @@ type Entry = {
 	rarityLabel: TextLabel,
 	incomeLabel: TextLabel,
 	viewport: ViewportFrame?,
+	viewportVariant: string, -- which variant the preview model is wearing
+	def: any,
 	squishyName: string,
-	incomeText: string,
+	baseIncome: number, -- level-1 Normal income; variants multiply it
 	rarityName: string,
 	rarityColor: Color3,
 }
@@ -85,7 +95,7 @@ end
 --
 -- Returns nil if the model cannot be built, so a single bad catalog entry
 -- costs that card its picture rather than taking the whole index down.
-local function buildPreview(parent: Frame, def: any): ViewportFrame?
+local function buildPreview(parent: Frame, def: any, variantName: string?): ViewportFrame?
 	-- build() returns (Model, height); only the model matters here.
 	local ok, result = pcall(function()
 		return (SquishyModels.build :: any)({
@@ -93,6 +103,8 @@ local function buildPreview(parent: Frame, def: any): ViewportFrame?
 			color = def.color,
 			sparkle = def.sparkle,
 			scale = def.scale,
+			-- The preview wears the page's coat, so the Gold page shows gold.
+			variant = variantName,
 		})
 	end)
 	if not ok or typeof(result) ~= "Instance" then
@@ -175,16 +187,35 @@ local function buildEntry(def: any, rarity: any, cellSize: UDim2, order: number)
 		rarityLabel = addLabel(frame, "Rarity", 0.13, 0.73),
 		incomeLabel = addLabel(frame, "Income", 0.15, 0.88),
 		viewport = viewport,
+		viewportVariant = "Normal",
+		def = def,
 		squishyName = def.name,
-		incomeText = Util.formatMoney(rarity.income) .. "/s",
+		baseIncome = rarity.income,
 		rarityName = def.rarity,
 		rarityColor = rarity.color,
 	}
 end
 
--- Discovered cards read out in full; the rest keep their rarity (it is the
--- only hint you get) and go grey and "???" everywhere else.
-local function paintEntry(entry: Entry, discovered: boolean)
+-- Discovered cards read out in full for the page's variant; the rest keep
+-- their rarity (it is the only hint you get) and go grey and "???" everywhere
+-- else — but the silhouette still wears the variant's SHAPE, because the
+-- preview model is rebuilt per page.
+local function paintEntry(entry: Entry, variant: any, discovered: boolean)
+	-- The preview model changes coat with the page. Rebuilt only when the page
+	-- actually changed, so repainting for discovery is cheap.
+	if entry.viewportVariant ~= variant.name then
+		entry.viewportVariant = variant.name
+		local old = entry.viewport
+		if old ~= nil then
+			old:Destroy()
+		end
+		entry.viewport = buildPreview(
+			entry.frame,
+			entry.def,
+			if variant.name == "Normal" then nil else variant.name
+		)
+	end
+
 	-- The rarity shows on every card, discovered or not: it is the only hint
 	-- an undiscovered squishy gives you.
 	entry.rarityLabel.Text = entry.rarityName
@@ -201,9 +232,9 @@ local function paintEntry(entry: Entry, discovered: boolean)
 
 	if discovered then
 		entry.frame.BackgroundTransparency = CARD_TRANSPARENCY
-		entry.nameLabel.Text = entry.squishyName
-		entry.nameLabel.TextColor3 = NAME_COLOR
-		entry.incomeLabel.Text = entry.incomeText
+		entry.nameLabel.Text = (variant.prefix or "") .. entry.squishyName
+		entry.nameLabel.TextColor3 = (variant.color :: Color3?) or NAME_COLOR
+		entry.incomeLabel.Text = Util.formatMoney(entry.baseIncome * (variant.income or 1)) .. "/s"
 		entry.incomeLabel.TextColor3 = MONEY_GREEN
 		entry.nameLabel.TextTransparency = 0
 		entry.rarityLabel.TextTransparency = 0
@@ -278,7 +309,7 @@ function IndexUi.Start()
 				error(("unknown rarity %q"):format(tostring(def.rarity)), 0)
 			end
 			local entry = buildEntry(def, rarity, cellSize, order)
-			paintEntry(entry, false)
+			paintEntry(entry, Config.VariantByName.Normal, false)
 			entry.frame.Parent = scrolling
 			entries[def.name] = entry
 			entryCount += 1
@@ -333,37 +364,149 @@ function IndexUi.Start()
 	scrolling:GetPropertyChangedSignal("AbsoluteSize"):Connect(refreshCanvas)
 	refreshCanvas()
 
-	-- ---------- tabs ----------
+	-- ---------- variant pages ----------
 
-	-- Golden / Diamond variants do not exist in this game yet, so only the
-	-- "Normal" tab is shown; it scrolls the grid back to the top.
-	local tabs = panel:FindFirstChild("Buttons")
-	if tabs ~= nil then
-		for _, tabName in { "Golden", "Diamond" } do
-			local tab = tabs:FindFirstChild(tabName)
-			if tab ~= nil and tab:IsA("GuiObject") then
-				tab.Visible = false
+	-- Discovery keys, exactly as the server sends them: `variant .. "|" .. name`.
+	local discovered: { [string]: boolean } = {}
+	local selectedVariant: any = Config.VariantByName.Normal
+
+	local function repaintAll()
+		for _, entry in entries do
+			local key = selectedVariant.name .. "|" .. entry.squishyName
+			local ok, err = pcall(paintEntry, entry, selectedVariant, discovered[key] == true)
+			if not ok then
+				warn(("[IndexUi] could not paint %s: %s"):format(entry.squishyName, tostring(err)))
 			end
 		end
-		local normal = tabs:FindFirstChild("Normal")
-		if normal ~= nil and normal:IsA("GuiButton") then
-			normal.Visible = true
-			UiRefs.bindButton(normal, function()
-				scrolling.CanvasPosition = Vector2.zero
-			end)
+	end
+
+	-- ---------- tabs ----------
+
+	-- One button per variant. The pack ships styled pills for Normal, Golden
+	-- and Diamond; every other variant clones the Normal pill and tints it
+	-- (Rainbow wears a gradient instead — it has no single colour).
+	local tabButtons: { [string]: GuiButton } = {}
+	-- Each pill's full-strength tint, so highlightTabs can dim the others.
+	local fullColor: { [string]: Color3 } = {}
+
+	local function highlightTabs()
+		for name, button in tabButtons do
+			local background = button:FindFirstChild("Background")
+			if background ~= nil and background:IsA("ImageLabel") then
+				local full = fullColor[name] or Color3.new(1, 1, 1)
+				background.ImageColor3 = if name == selectedVariant.name
+					then full
+					else full:Lerp(Color3.new(0, 0, 0), 0.45)
+			end
 		end
+	end
+
+	local function selectTab(variant: any)
+		if selectedVariant ~= variant then
+			selectedVariant = variant
+			highlightTabs()
+			repaintAll()
+		end
+		scrolling.CanvasPosition = Vector2.zero
+	end
+
+	local tabs = panel:FindFirstChild("Buttons")
+	if tabs ~= nil then
+		-- The pack's own pill for a variant, where it ships one.
+		local packNames: { [string]: string } = { Normal = "Normal", Gold = "Golden", Diamond = "Diamond" }
+		local template = tabs:FindFirstChild("Normal")
+		for order, variant in Config.Variants :: { any } do
+			local button: Instance? = nil
+			local packName = packNames[variant.name]
+			if packName ~= nil then
+				button = tabs:FindFirstChild(packName)
+			elseif template ~= nil then
+				local clone = template:Clone()
+				clone.Name = variant.name
+				local background = clone:FindFirstChild("Background")
+				if background ~= nil and background:IsA("ImageLabel") then
+					if variant.name == "Rainbow" then
+						local gradient = Instance.new("UIGradient")
+						gradient.Color = ColorSequence.new({
+							ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 118, 118)),
+							ColorSequenceKeypoint.new(0.33, Color3.fromRGB(255, 224, 110)),
+							ColorSequenceKeypoint.new(0.66, Color3.fromRGB(120, 235, 160)),
+							ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 160, 255)),
+						})
+						gradient.Parent = background
+					elseif typeof(variant.color) == "Color3" then
+						background.ImageColor3 = variant.color
+					end
+				end
+				clone.Parent = tabs
+				button = clone
+			end
+			if button ~= nil and button:IsA("GuiButton") then
+				button.Visible = true
+				button.LayoutOrder = order
+				local text = button:FindFirstChild("Text")
+				if text ~= nil and text:IsA("TextLabel") then
+					text.Text = variant.name
+				end
+				local background = button:FindFirstChild("Background")
+				fullColor[variant.name] = if background ~= nil and background:IsA("ImageLabel")
+					then background.ImageColor3
+					else Color3.new(1, 1, 1)
+				tabButtons[variant.name] = button
+				UiRefs.bindButton(button :: GuiButton, function()
+					selectTab(variant)
+				end)
+			end
+		end
+		-- The pack authored its three pills in tree order; LayoutOrder now runs
+		-- the pages in catalog order instead.
+		local list = tabs:FindFirstChildOfClass("UIListLayout")
+		if list ~= nil then
+			list.SortOrder = Enum.SortOrder.LayoutOrder
+			-- Seven pills where the pack had three: a fixed 6px gap instead of
+			-- the authored scale padding, or the stack runs off the screen.
+			list.Padding = UDim.new(0, 6)
+		end
+		-- Stretch the pill column over the panel's full height and shrink each
+		-- pill a touch; the layout's Center alignment then keeps all seven on
+		-- screen where the pack's three-pill sizing pushed them past the top.
+		-- The container is centre-anchored (like the rest of the pack), so its
+		-- centre goes to the panel's middle.
+		if tabs:IsA("GuiObject") then
+			local tabsFrame = tabs :: GuiObject
+			tabsFrame.Position = UDim2.new(tabsFrame.Position.X.Scale, tabsFrame.Position.X.Offset, 0.5, 0)
+			tabsFrame.Size = UDim2.new(tabsFrame.Size.X.Scale, 0, 1, 0)
+		end
+		for _, button in tabButtons do
+			button.Size = UDim2.new(0.86, 0, 0.86, 0)
+		end
+		highlightTabs()
 	end
 
 	-- ---------- discovery ----------
 
-	local function markDiscovered(squishyName: string)
-		local entry = entries[squishyName]
+	local function markDiscovered(key: string)
+		-- A bare name with no "|" is old-shape traffic: it means Normal.
+		if string.find(key, "|", 1, true) == nil then
+			key = "Normal|" .. key
+		end
+		if discovered[key] then
+			return
+		end
+		discovered[key] = true
+
+		local sep = string.find(key, "|", 1, true) :: number
+		local variantName = string.sub(key, 1, sep - 1)
+		if variantName ~= selectedVariant.name then
+			return -- it will show when that page is opened
+		end
+		local entry = entries[string.sub(key, sep + 1)]
 		if entry == nil then
 			return
 		end
-		local ok, err = pcall(paintEntry, entry, true)
+		local ok, err = pcall(paintEntry, entry, selectedVariant, true)
 		if not ok then
-			warn(("[IndexUi] could not reveal %s: %s"):format(squishyName, tostring(err)))
+			warn(("[IndexUi] could not reveal %s: %s"):format(key, tostring(err)))
 		end
 	end
 
@@ -375,9 +518,9 @@ function IndexUi.Start()
 			if typeof(payload) == "string" then
 				markDiscovered(payload :: string)
 			elseif typeof(payload) == "table" then
-				for _, entryName in (payload :: { any }) do
-					if typeof(entryName) == "string" then
-						markDiscovered(entryName :: string)
+				for _, key in (payload :: { any }) do
+					if typeof(key) == "string" then
+						markDiscovered(key :: string)
 					end
 				end
 			end

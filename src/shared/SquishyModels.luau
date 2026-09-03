@@ -784,7 +784,9 @@ end
 -- ---------------------------------------------------------------- variants --
 -- A variant repaints a finished rig. Gold goes metallic yellow; Rainbow cycles
 -- every visible part's hue together from one shared loop, so a shelf of them
--- pulses in step rather than each running its own timer.
+-- pulses in step rather than each running its own timer. The rest are one-coat
+-- treatments from COAT_EFFECTS below: a tint plus a material (and, for Galaxy,
+-- a starfield and a glow), so adding a coat variant is one table row.
 
 local rainbowParts: { BasePart } = {}
 local rainbowLoopStarted = false
@@ -858,6 +860,52 @@ local function paintVariant(part: BasePart, color: Color3): boolean
 	return false
 end
 
+-- The one-coat variants, keyed by Config effect name. `tint` recolours every
+-- visible part (through its SurfaceAppearance where it has one, so painted
+-- faces survive, exactly as Gold does); `material`/`reflectance` only land on
+-- parts wearing no surface art, where a material read cannot wash a face out.
+-- `glow` additionally hangs a starfield emitter and a lamp off the body.
+local COAT_EFFECTS: { [string]: { tint: Color3, material: Enum.Material, reflectance: number?, glow: Color3? } } = {
+	diamond = { tint = Color3.fromRGB(168, 226, 255), material = Enum.Material.Glass, reflectance = 0.42 },
+	galaxy = {
+		tint = Color3.fromRGB(96, 66, 214),
+		material = Enum.Material.SmoothPlastic,
+		glow = Color3.fromRGB(150, 110, 255),
+	},
+	undead = { tint = Color3.fromRGB(118, 164, 94), material = Enum.Material.Granite },
+	frozen = { tint = Color3.fromRGB(178, 226, 248), material = Enum.Material.Ice, reflectance = 0.12 },
+}
+
+-- The Galaxy dressing: slow drifting stars from the body's whole volume and a
+-- purple lamp, so it reads as a variant even in silhouette across the field.
+local function attachGalaxyGlow(primary: BasePart, glow: Color3)
+	local stars = Instance.new("ParticleEmitter")
+	stars.Name = "GalaxyStars"
+	stars.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	stars.Rate = 10
+	stars.Lifetime = NumberRange.new(0.9, 1.5)
+	stars.Speed = NumberRange.new(0.5, 1.4)
+	stars.SpreadAngle = Vector2.new(180, 180)
+	stars.Color = ColorSequence.new(glow, Color3.new(1, 1, 1))
+	stars.LightEmission = 1
+	stars.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.45),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	stars.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.15),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	stars.Parent = primary
+
+	local lamp = Instance.new("PointLight")
+	lamp.Name = "GalaxyLight"
+	lamp.Color = glow
+	lamp.Brightness = 1.2
+	lamp.Range = 10
+	lamp.Parent = primary
+end
+
 -- Returns true only when the face art could NOT be kept, so the caller knows to
 -- fall back to a billboard face.
 local function applyVariant(model: Model, variantName: string?): boolean
@@ -901,6 +949,25 @@ local function applyVariant(model: Model, variantName: string?): boolean
 			table.insert(rainbowParts, part)
 		end
 		startRainbowLoop()
+		return not keptArt
+	end
+
+	local coat = COAT_EFFECTS[variant.effect]
+	if coat ~= nil then
+		local keptArt = false
+		for _, part in visuals do
+			if paintVariant(part, coat.tint) then
+				keptArt = true
+			else
+				part.Material = coat.material
+				if coat.reflectance ~= nil then
+					part.Reflectance = coat.reflectance
+				end
+			end
+		end
+		if coat.glow ~= nil and model.PrimaryPart ~= nil then
+			pcall(attachGalaxyGlow, model.PrimaryPart :: BasePart, coat.glow)
+		end
 		return not keptArt
 	end
 	return false

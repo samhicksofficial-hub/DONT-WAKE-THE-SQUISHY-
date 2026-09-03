@@ -282,7 +282,8 @@ local function onPickup(player: Player, model: Model)
 
 	if discoveryService ~= nil then
 		pcall(function()
-			discoveryService.MarkDiscovered(player, def.name)
+			-- Per-variant: a Gold pickup fills the Gold page of the index.
+			discoveryService.MarkDiscovered(player, def.name, model:GetAttribute("Variant"))
 		end)
 	end
 end

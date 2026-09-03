@@ -296,9 +296,11 @@ commands.discoverAll = function(player, _payload)
 	end
 	local added = 0
 	for _, def in Config.Squishies :: { any } do
-		if not discovery.IsDiscovered(player, def.name) then
-			discovery.MarkDiscovered(player, def.name)
-			added += 1
+		for _, variant in Config.Variants :: { any } do
+			if not discovery.IsDiscovered(player, def.name, variant.name) then
+				discovery.MarkDiscovered(player, def.name, variant.name)
+				added += 1
+			end
 		end
 	end
 	return true, ("index filled in (%d new)"):format(added)
