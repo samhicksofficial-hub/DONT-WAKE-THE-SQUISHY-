@@ -415,6 +415,34 @@ Config.Products = {
 Config.Passes = {
 	VIP = 0,            -- permanent income multiplier (Shop.VipIncomeMult)
 	PermanentSpeed = 0, -- permanent walkspeed bonus (Shop.PermanentSpeedBonus)
+	-- The gear on the basement stands (Config.Gear). Fill these in from the
+	-- Creator Dashboard and the stands start selling with no code change.
+	SpeedCoil = 0,
+	SlapHand = 0,
+	Glock = 0,
+	Knight = 0,
+}
+
+-- The gear sold from the item stands in a base's BASEMENT storeys.
+--
+-- Stand N on an item floor shows entry N of this list; stands past the end of
+-- it stay bare. `template` is a child of ServerStorage.GearItems — the models
+-- themselves live in the place, not in this repo, because they are imported
+-- art. A missing template costs that stand its display, nothing more.
+--
+-- `kind` says what owning the pass actually hands over:
+--   "tool"      a Tool copied into the player's Backpack and StarterGear
+--   "bodyguard" a follower model — the pass is granted as an attribute and the
+--               gear's own scripts do the rest
+Config.Gear = {
+	{ key = "SpeedCoil", pass = "SpeedCoil", template = "SpeedCoil", kind = "tool",
+		name = "Speed Coil", blurb = "Run faster, forever" },
+	{ key = "SlapHand", pass = "SlapHand", template = "DefaultSlap", kind = "tool",
+		name = "Slap Hand", blurb = "Send them flying" },
+	{ key = "Glock", pass = "Glock", template = "Glock-17", kind = "tool",
+		name = "Glock-17", blurb = "Look the part" },
+	{ key = "Knight", pass = "Knight", template = "The Knight", kind = "bodyguard",
+		name = "The Knight", blurb = "Your own bodyguard" },
 }
 
 -- What the shop's items actually grant — one place to tune, read by

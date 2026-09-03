@@ -681,6 +681,110 @@ local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	end))
 end
 
+-- ------------------------------------------------------------ gear stands --
+-- A basement stand: the gear standing on the pedestal, a name board over it,
+-- and a pad in front that prompts the Robux purchase. GearService owns the
+-- catalogue, the price and the prompt; the furniture is this file's job,
+-- because the frames, the pad geometry and the shell-reuse rules live here.
+
+-- How tall a display is scaled to, whatever it started as: a Glock and a
+-- Knight are wildly different sizes and both have to read on the same plinth.
+local GEAR_DISPLAY_HEIGHT = 4.2
+local GEAR_DISPLAY_LIFT = 0.4 -- clear of the pedestal cap
+
+local function dressGearStand(plot: PlotRecord, slot: SlotRecord)
+	local top = slot.pedestalTop
+	local gear = nil
+	local gearService = servicesRef ~= nil and servicesRef.GearService or nil
+	if gearService ~= nil then
+		local ok, found = pcall(gearService.ForStand, slot.slotOnFloor)
+		gear = if ok then found else nil
+	end
+
+	if gear == nil or gearService == nil then
+		-- Past the end of the catalogue: leave the stand bare, as before.
+		if top ~= nil then
+			local gui = newBillboard(top, "ItemStandGui", 5, 2.4, 2.4, 60)
+			local layoutGui = Instance.new("UIListLayout")
+			layoutGui.FillDirection = Enum.FillDirection.Vertical
+			layoutGui.HorizontalAlignment = Enum.HorizontalAlignment.Center
+			layoutGui.Parent = gui
+			newLabel(gui, "Item Stand", COLOR_WHITE, 1, 0.5)
+			newLabel(gui, "coming soon", Palette.SafeZone, 2, 0.34)
+		end
+		return
+	end
+
+	-- The item itself, standing on the plinth.
+	if top ~= nil then
+		local okDisplay, display = pcall(gearService.BuildDisplay, gear, "GearDisplay" .. tostring(slot.index))
+		if okDisplay and display ~= nil then
+			display.Parent = plot.model
+			local _, size = display:GetBoundingBox()
+			local tallest = math.max(size.X, size.Y, size.Z)
+			if tallest > 0.01 then
+				display:ScaleTo(GEAR_DISPLAY_HEIGHT / tallest)
+			end
+			local _, scaled = display:GetBoundingBox()
+			display:PivotTo(
+				top.CFrame * CFrame.new(0, top.Size.Y / 2 + GEAR_DISPLAY_LIFT + scaled.Y / 2, 0)
+			)
+		end
+
+		local gui = newBillboard(top, "ItemStandGui", 6, 2.6, 5.4, 90)
+		local layoutGui = Instance.new("UIListLayout")
+		layoutGui.FillDirection = Enum.FillDirection.Vertical
+		layoutGui.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		layoutGui.Parent = gui
+		newLabel(gui, gear.name, COLOR_WHITE, 1, 0.5)
+		newLabel(gui, gear.blurb, Palette.SafeZone, 2, 0.34)
+	end
+
+	-- ...and the pad you step on to buy it, where a collect pad would go.
+	local pad = newPart(
+		plot.model,
+		"GearPad" .. tostring(slot.index),
+		Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER),
+		slotRecordFrame(plot, slot)
+			* CFrame.new(0, slot.floorTop + PAD_LIFT + PAD_THICKNESS / 2, -PAD_FORWARD)
+			* PAD_UPRIGHT,
+		Palette.UnlockPad,
+		Enum.Material.Neon
+	)
+	pad.Shape = Enum.PartType.Cylinder
+	pad.CanCollide = false
+
+	local padGui = newBillboard(pad, "GearPadGui", 5, 3.4, 3.2, 90)
+	local padLayout = Instance.new("UIListLayout")
+	padLayout.FillDirection = Enum.FillDirection.Vertical
+	padLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	padLayout.Parent = padGui
+	local priceLabel = newLabel(padGui, "Coming soon", COLOR_WHITE, 1, 0.46)
+	newLabel(padGui, "step on to buy", Palette.SafeZone, 2, 0.3)
+
+	-- The price is a web call. Spawned so a slow lookup never holds up the
+	-- rest of the plot, and the label simply retexts when it lands.
+	task.spawn(function()
+		local okPrice, price = pcall(gearService.PriceAsync, gear)
+		if okPrice and typeof(price) == "number" and priceLabel.Parent ~= nil then
+			priceLabel.Text = ("R$ %d"):format(price)
+			priceLabel.TextColor3 = COLOR_MONEY
+		end
+	end)
+
+	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
+		if not isOwnerTouch(plot, hitPart) then
+			return
+		end
+		local now = os.clock()
+		if now - slot.lastTouch < TOUCH_DEBOUNCE then
+			return
+		end
+		slot.lastTouch = now
+		pcall(gearService.PromptPurchase, plot.player, gear)
+	end))
+end
+
 -- ------------------------------------------------------------- levelling --
 
 -- The yellow upgrade plaque: a rounded card with a fat black outline, an arrow
@@ -1447,19 +1551,10 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 		}
 		plot.slots[index] = slot
 		if isItem then
-			-- An item stand: the platform and pedestal only. No place prompt,
-			-- no collect pad, no unlock pad — the gear that will stand here is
-			-- coming, so for now a small board says what the spot is for.
-			local top = pedestalTop
-			if top ~= nil then
-				local gui = newBillboard(top, "ItemStandGui", 5, 2.4, 2.4, 60)
-				local layoutGui = Instance.new("UIListLayout")
-				layoutGui.FillDirection = Enum.FillDirection.Vertical
-				layoutGui.HorizontalAlignment = Enum.HorizontalAlignment.Center
-				layoutGui.Parent = gui
-				newLabel(gui, "Item Stand", COLOR_WHITE, 1, 0.5)
-				newLabel(gui, "coming soon", Palette.SafeZone, 2, 0.34)
-			end
+			-- An item stand: the platform and pedestal, the gear standing on
+			-- it and a pad in front that sells it. No place prompt, no collect
+			-- pad, no unlock pad — a basement never holds squishies.
+			dressGearStand(plot, slot)
 		else
 			createPlacePrompt(plot, slot)
 			if unlocked then

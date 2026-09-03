@@ -36,6 +36,7 @@ services.SpawnService = require(script.SpawnService) :: any
 services.EventService = require(script.EventService) :: any
 services.DailyService = require(script.DailyService) :: any
 services.ShopService = require(script.ShopService) :: any
+services.GearService = require(script.GearService) :: any
 services.StealService = require(script.StealService) :: any
 services.PortalService = require(script.PortalService) :: any
 -- Studio only: its Start does nothing and publishes no remote elsewhere.
@@ -62,6 +63,10 @@ for _, name in {
 	-- Owns the game's single ProcessReceipt; StealService registers into it,
 	-- so the router must be standing first.
 	"ShopService",
+	-- Order-free: PlotService dresses the basement stands through the module
+	-- table as it builds, and every entry point it calls reads only Config and
+	-- ServerStorage. Start here just wires ownership and the purchase signal.
+	"GearService",
 	-- Last: it walks the finished plots to attach its prompts.
 	"StealService",
 	-- Needs the map root resolved and the saved props in place.

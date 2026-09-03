@@ -299,6 +299,25 @@ local function buildShell(model: Model, baseCFrame: CFrame)
 		Enum.Material.SmoothPlastic
 	)
 
+	-- The front is open so a player can walk in off the walkway — but that is
+	-- only true at ground level. Every storey BELOW the ground floor is
+	-- underground, and outside it is the hole the world's ground plane leaves
+	-- for this base, so an open front down there was two steps into the void.
+	-- Wall the buried storeys in. Its top lands flush with the ground floor's
+	-- slab, so the doorway upstairs is untouched, and a base with no basements
+	-- gets a height of zero and no wall at all.
+	local buriedHeight = FLOOR_TOPS[GROUND_INDEX] - SHELL_BASE
+	if buriedHeight > 0.01 then
+		newPart(
+			model,
+			"FrontWall",
+			Vector3.new(FOOTPRINT.X, buriedHeight, WALL_T),
+			baseCFrame * CFrame.new(0, SHELL_BASE + buriedHeight / 2, -(HALF_DEPTH - WALL_T / 2)),
+			Palette.BaseWall,
+			Enum.Material.SmoothPlastic
+		)
+	end
+
 	for _, side in { -1, 1 } do
 		local wallX = side * (HALF_WIDTH - WALL_T / 2)
 		local label = side < 0 and "Left" or "Right"
