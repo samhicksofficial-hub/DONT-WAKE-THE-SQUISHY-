@@ -687,9 +687,13 @@ end
 -- catalogue, the price and the prompt; the furniture is this file's job,
 -- because the frames, the pad geometry and the shell-reuse rules live here.
 
--- How tall a display is scaled to, whatever it started as: a Glock and a
--- Knight are wildly different sizes and both have to read on the same plinth.
-local GEAR_DISPLAY_HEIGHT = 4.2
+-- The box a display is scaled to fit, whatever it started as: a Glock and an
+-- armoured Knight holding a sword are wildly different shapes and both have to
+-- read on the same plinth. Fitting a BOX rather than one dimension is what
+-- keeps a tall item tall — scaling the Knight's longest side down to a pistol's
+-- length left him a doll.
+local GEAR_DISPLAY_HEIGHT = 5.5
+local GEAR_DISPLAY_WIDTH = 4
 local GEAR_DISPLAY_LIFT = 0.4 -- clear of the pedestal cap
 
 local function dressGearStand(plot: PlotRecord, slot: SlotRecord)
@@ -721,9 +725,21 @@ local function dressGearStand(plot: PlotRecord, slot: SlotRecord)
 		if okDisplay and display ~= nil then
 			display.Parent = plot.model
 			local _, size = display:GetBoundingBox()
-			local tallest = math.max(size.X, size.Y, size.Z)
-			if tallest > 0.01 then
-				display:ScaleTo(GEAR_DISPLAY_HEIGHT / tallest)
+			local widest = math.max(size.X, size.Z)
+			local scale = math.huge
+			if size.Y > 0.01 then
+				scale = math.min(scale, GEAR_DISPLAY_HEIGHT / size.Y)
+			end
+			if widest > 0.01 then
+				scale = math.min(scale, GEAR_DISPLAY_WIDTH / widest)
+			end
+			if scale < math.huge then
+				-- Multiplied by the scale it already carries. ScaleTo is
+				-- ABSOLUTE — it sizes a model against the dimensions it was
+				-- authored at, not against what it measures now. The Glock
+				-- ships pre-scaled to 0.273, so a bare ScaleTo(2.24) sized it
+				-- off its authored size and produced a 14-stud pistol.
+				display:ScaleTo(display:GetScale() * scale)
 			end
 			local _, scaled = display:GetBoundingBox()
 			display:PivotTo(

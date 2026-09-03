@@ -97,50 +97,75 @@ function GearService.Template(gear: any): Instance?
 	return folder:FindFirstChild(gear.template)
 end
 
--- A display-only copy: every part anchored, inert, and stripped of the
--- original's scripts, joints and sounds.
+-- A display-only copy: cloned whole, then made inert.
 --
--- Parts are copied one by one into a flat Model rather than cloning the whole
--- thing. A straight clone brings the item's own code with it, and eight plots'
--- worth of a slap tool's server script all running at once is not a display,
--- it is a swarm. Part CFrames are world-space, so a flat model keeps the shape.
+-- Cloned WHOLE, not rebuilt from its parts. Taking a rig apart keeps only the
+-- BaseParts and silently drops everything else that makes it look like itself:
+-- the CharacterMeshes that are the Knight's armour, his BodyColors, the weld
+-- holding his helmet on. That left a bare white torso with a helmet floating
+-- above it. The item's own scripts are the reason not to clone naively, so
+-- they are stripped here instead — eight plots' worth of a slap tool's server
+-- script all running at once is not a display, it is a swarm.
 function GearService.BuildDisplay(gear: any, name: string): Model?
 	local template = GearService.Template(gear)
 	if template == nil then
 		return nil
 	end
-	local display = Instance.new("Model")
+
+	local clone = template:Clone()
+	local display: Model
+	if clone:IsA("Model") then
+		display = clone
+	else
+		-- A Tool parented into the Workspace is a pickup a passing player can
+		-- grab. Rehouse its innards in a plain Model instead.
+		display = Instance.new("Model")
+		for _, child in clone:GetChildren() do
+			child.Parent = display
+		end
+		clone:Destroy()
+	end
 	display.Name = name
 
-	local sources: { Instance } = if template:IsA("BasePart") then { template } else template:GetDescendants()
-	local copied = 0
-	for _, source in sources do
-		if not source:IsA("BasePart") then
-			continue
+	-- Collected first, destroyed after: mutating the tree while walking a
+	-- snapshot of it is how you end up setting properties on a dead instance.
+	local doomed: { Instance } = {}
+	local parts = 0
+	for _, d in display:GetDescendants() do
+		if
+			d:IsA("LuaSourceContainer")
+			or d:IsA("Sound")
+			or d:IsA("ParticleEmitter")
+			or d:IsA("ProximityPrompt")
+			or d:IsA("ClickDetector")
+			or d:IsA("RemoteEvent")
+			or d:IsA("RemoteFunction")
+			or d:IsA("BillboardGui")
+		then
+			table.insert(doomed, d)
+		elseif d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanTouch = false
+			d.CanQuery = false
+			d.Massless = true
+			parts += 1
+		elseif d:IsA("Humanoid") then
+			-- KEPT on purpose: CharacterMeshes, BodyColors, Shirt and Pants
+			-- only render on a model that has one. Silenced so the stand does
+			-- not sprout a name plate and a health bar.
+			d.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+			d.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+			pcall(function()
+				(d :: any).EvaluateStateMachine = false
+			end)
 		end
-		local copy = source:Clone()
-		-- Keep decals, textures and surface appearances; drop anything that
-		-- could run, move or make noise.
-		for _, sub in copy:GetDescendants() do
-			if
-				sub:IsA("LuaSourceContainer")
-				or sub:IsA("JointInstance")
-				or sub:IsA("Constraint")
-				or sub:IsA("Sound")
-				or sub:IsA("ParticleEmitter")
-			then
-				sub:Destroy()
-			end
-		end
-		copy.Anchored = true
-		copy.CanCollide = false
-		copy.CanTouch = false
-		copy.CanQuery = false
-		copy.Massless = true
-		copy.Parent = display
-		copied += 1
 	end
-	if copied == 0 then
+	for _, d in doomed do
+		d:Destroy()
+	end
+
+	if parts == 0 then
 		display:Destroy()
 		return nil
 	end
