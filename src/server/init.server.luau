@@ -37,6 +37,7 @@ services.EventService = require(script.EventService) :: any
 services.DailyService = require(script.DailyService) :: any
 services.ShopService = require(script.ShopService) :: any
 services.StealService = require(script.StealService) :: any
+services.PortalService = require(script.PortalService) :: any
 -- Studio only: its Start does nothing and publishes no remote elsewhere.
 services.DebugService = require(script.DebugService) :: any
 
@@ -63,6 +64,8 @@ for _, name in {
 	"ShopService",
 	-- Last: it walks the finished plots to attach its prompts.
 	"StealService",
+	-- Needs the map root resolved and the saved props in place.
+	"PortalService",
 	-- Truly last: the dev panel drives every service above through the
 	-- `services` table, so they all have to be up before it opens for business.
 	"DebugService",
