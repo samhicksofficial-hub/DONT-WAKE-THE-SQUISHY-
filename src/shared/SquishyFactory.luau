@@ -94,11 +94,9 @@ function SquishyFactory.create(squishyName: string, variantName: string?): Model
 	local nameLabel = makeLabel(info, "", Color3.new(1, 1, 1), 26, 1)
 	nameLabel.RichText = true
 	nameLabel.Text = Config.richDisplayName(def.name, variant and variant.name)
-	-- A variant reads as its own line so a Rainbow is obvious at a glance.
-	local rarityText = if variant ~= nil and variant.name ~= "Normal"
-		then ("%s  %s"):format(variant.name:upper(), def.rarity)
-		else def.rarity
-	makeLabel(info, rarityText, rarity.color, 18, 2)
+	-- Rarity alone: the coloured variant word in the name line above already
+	-- says what coat it wears, so "GOLD Uncommon" was saying it twice.
+	makeLabel(info, def.rarity, rarity.color, 18, 2)
 	makeLabel(info, Util.formatMoney(income) .. "/s", Color3.fromRGB(85, 255, 85), 18, 3)
 
 	-- No Zzz on a field squishy. A field of them put a "Zzz" over every single
