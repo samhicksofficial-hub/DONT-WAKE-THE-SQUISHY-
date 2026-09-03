@@ -14,7 +14,7 @@ require(script:WaitForChild("UiRefs")).get()
 
 -- DebugPanel is last and Studio-only: it builds its own overlay rather than
 -- driving the pack, so it must never delay the real UI coming up.
-for _, moduleName in { "Hud", "AlertUi", "Panels", "IndexUi", "UpgradesUi", "RebirthUi", "WheelUi", "DailyUi", "Popups", "EnemyBounce", "DebugPanel" } do
+for _, moduleName in { "Hud", "AlertUi", "Panels", "IndexUi", "ShopUi", "RebirthUi", "WheelUi", "DailyUi", "Popups", "EnemyBounce", "DebugPanel" } do
 	local module = script:FindFirstChild(moduleName)
 	if module then
 		local ok, err = pcall(function()

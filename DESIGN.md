@@ -257,7 +257,12 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 - `IndexUi.luau` — fills `Index.Scrolling` from `Config.Squishies`, greying
   undiscovered, with one tab page per `Config.Variants` entry (per-variant
   discovery, tinted previews, multiplied incomes).
-- `UpgradesUi.luau`, `RebirthUi.luau`, `WheelUi.luau` — drive their panels from the
+- `ShopUi.luau` — the Robux store: dresses the pack Shop panel's shipped cards
+  (StarterPack, ProPack-as-VIP, ItemsOnly-as-boosts, CashOnly bundles) and prompts
+  purchases. A card whose id is 0 shows greyed. The old UpgradesUi (cash upgrade
+  tracks) is REMOVED - UpgradeService still owns the attributes, but nothing
+  sells track levels any more.
+- `RebirthUi.luau`, `WheelUi.luau` — drive their panels from the
   attributes below and fire the remotes.
 - `DailyUi.luau` — the seven-day login panel. The pack ships no daily frame, so this
   one **clones `Frames.Index`**, strips its content and keeps the shell (`Stroke`,
@@ -317,10 +322,17 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 - **Rebirth multiplier**: `EconomyService.AddMoney` applies it (single choke point),
   so pads/wheel/all sources scale together.
 
-## Monetization (parked — needs the user's Creator Dashboard)
-`Shop` packs, the `Random` button, and the Wheel's Robux buttons need real
-developer-product ids. `Config.Products` holds them; while an id is 0 the client
-HIDES that button/pack. No code guesses ids.
+## Monetization (ids parked — needs the user's Creator Dashboard)
+The Shop sells developer products (Config.Products: starter pack, 2x cash boost,
+three cash bundles, wheel spins, Steal) and game passes (Config.Passes: VIP,
+PermanentSpeed); what each grants is tuned in Config.Shop. ShopService owns the
+game's ONE MarketplaceService.ProcessReceipt and routes receipts by id -
+anything else selling a product registers a handler with it (StealService does).
+Grants land as player attributes: VipActive and BoostUntil (EconomyService
+multiplies income at its choke point), PermSpeedBonus (SquishyService adds it to
+walkspeed). While an id is 0 the card shows GREYED and un-buyable; no code
+guesses ids. NOTE: the DonationLeaderboard free model in the place also assigns
+ProcessReceipt - whichever runs last wins, same as before ShopService existed.
 
 ---
 

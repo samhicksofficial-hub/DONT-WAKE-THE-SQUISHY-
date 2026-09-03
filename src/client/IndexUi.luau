@@ -181,9 +181,13 @@ local function buildEntry(def: any, rarity: any, cellSize: UDim2, order: number)
 	-- and tighten up to share what is left.
 	local viewport = buildPreview(frame, def)
 
+	-- Rich text: only the variant word is coloured (Config.richDisplayName).
+	local nameLabel = addLabel(frame, "SquishyName", 0.16, 0.58)
+	nameLabel.RichText = true
+
 	return {
 		frame = frame,
-		nameLabel = addLabel(frame, "SquishyName", 0.16, 0.58),
+		nameLabel = nameLabel,
 		rarityLabel = addLabel(frame, "Rarity", 0.13, 0.73),
 		incomeLabel = addLabel(frame, "Income", 0.15, 0.88),
 		viewport = viewport,
@@ -232,8 +236,8 @@ local function paintEntry(entry: Entry, variant: any, discovered: boolean)
 
 	if discovered then
 		entry.frame.BackgroundTransparency = CARD_TRANSPARENCY
-		entry.nameLabel.Text = (variant.prefix or "") .. entry.squishyName
-		entry.nameLabel.TextColor3 = (variant.color :: Color3?) or NAME_COLOR
+		entry.nameLabel.Text = Config.richDisplayName(entry.squishyName, variant.name)
+		entry.nameLabel.TextColor3 = NAME_COLOR
 		entry.incomeLabel.Text = Util.formatMoney(entry.baseIncome * (variant.income or 1)) .. "/s"
 		entry.incomeLabel.TextColor3 = MONEY_GREEN
 		entry.nameLabel.TextTransparency = 0

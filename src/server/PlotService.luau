@@ -1132,6 +1132,14 @@ local function adoptSavedShell(builder: any, model: Model, spotIndex: number, fl
 		-- Copy in, rather than reparenting: the saved shell has to survive to
 		-- serve the next player who claims this spot.
 		local copy = saved:Clone()
+		-- The tool's stamps (spot, floors, footprint, layout version) live on
+		-- the shell MODEL itself, and only its children are transplanted — so
+		-- the attributes must ride across too, or Adopt reads blanks. Reading
+		-- blanks is what quietly kept any multi-storey shell from ever serving
+		-- its owner (floors read 0/0) and refused every layout-version check.
+		for name, value in copy:GetAttributes() do
+			model:SetAttribute(name, value)
+		end
 		for _, child in copy:GetChildren() do
 			child.Parent = model
 		end

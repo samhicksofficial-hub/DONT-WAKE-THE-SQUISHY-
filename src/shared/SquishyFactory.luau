@@ -89,7 +89,11 @@ function SquishyFactory.create(squishyName: string, variantName: string?): Model
 	layout.Parent = info
 	local incomeMult = (variant and variant.income) or 1
 	local income = rarity.income * incomeMult
-	makeLabel(info, displayName, (variant and variant.color) or Color3.new(1, 1, 1), 26, 1)
+	-- Only the variant WORD wears the variant's colour ("Gold Olive Glitter"
+	-- paints just "Gold" gold); the squishy's own name stays white.
+	local nameLabel = makeLabel(info, "", Color3.new(1, 1, 1), 26, 1)
+	nameLabel.RichText = true
+	nameLabel.Text = Config.richDisplayName(def.name, variant and variant.name)
 	-- A variant reads as its own line so a Rainbow is obvious at a glance.
 	local rarityText = if variant ~= nil and variant.name ~= "Normal"
 		then ("%s  %s"):format(variant.name:upper(), def.rarity)

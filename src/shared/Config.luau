@@ -130,6 +130,32 @@ for _, variant in Config.Variants do
 	Config.VariantByName[variant.name] = variant
 end
 
+-- The display name with only the variant WORD coloured — "Gold Olive Glitter"
+-- paints "Gold" gold and leaves the squishy's own name in the label's colour.
+-- Returns RichText markup, so the label showing it must set RichText = true.
+-- Rainbow has no single colour: its word cycles one hue per letter instead.
+function Config.richDisplayName(squishyName: string, variantName: string?): string
+	local variant = if variantName ~= nil then Config.VariantByName[variantName] else nil
+	if variant == nil or variant.prefix == nil or variant.prefix == "" then
+		return squishyName
+	end
+	local word = ((variant.prefix :: string):gsub("%s+$", ""))
+	local painted: string
+	if variant.name == "Rainbow" then
+		local letters = {}
+		for i = 1, #word do
+			-- 0.85 stops the wheel short of wrapping back round to red.
+			local color = Color3.fromHSV(((i - 1) / #word) * 0.85, 0.8, 1)
+			letters[#letters + 1] = ('<font color="#%s">%s</font>'):format(color:ToHex(), word:sub(i, i))
+		end
+		painted = table.concat(letters)
+	else
+		local color = (variant.color :: Color3?) or Color3.new(1, 1, 1)
+		painted = ('<font color="#%s">%s</font>'):format(color:ToHex(), word)
+	end
+	return painted .. " " .. squishyName
+end
+
 -- The two giant patrolling enemies: monstrous versions of real squishies.
 -- `shape` + `color` (as tint) feed SquishyModels.build; `scale` is huge.
 Config.Enemies = {
@@ -367,22 +393,41 @@ Config.Wheel = {
 	},
 }
 
--- Robux developer products / passes. All 0 until they are created in the
--- Creator Dashboard; the client HIDES any button or pack whose id is still 0,
--- so nothing here ever guesses an id. Fill these in to switch them on.
+-- Robux developer products (the CONSUMABLE purchases). All 0 until they are
+-- created in the Creator Dashboard, so nothing here ever guesses an id: ShopUi
+-- shows a card whose id is still 0 greyed with no live price, and ShopService
+-- grants nothing for a receipt it has no handler for. Fill these in to switch
+-- them on.
 Config.Products = {
-	StarterPack = 0,
-	ProPack = 0,
-	ItemsOnly = 0,
-	CashOnly = 0,
-	Random = 0,
+	StarterPack = 0, -- one-time bundle: cash + a guaranteed squishy + spins
+	Boost2x = 0,     -- double income for Shop.Boost2xMinutes
+	CashSmall = 0,   -- the three cash bundles (amounts in Config.Shop)
+	CashMedium = 0,
+	CashLarge = 0,
 	WheelSpins3 = 0,
 	WheelSpins9 = 0,
-	CarryUpgrade = 0,
-	RebirthSkip = 0,
 	-- Pay Robux to take a squishy off another player's plot. Stealing stays
 	-- switched off until this id exists.
 	Steal = 0,
+}
+
+-- Game passes: the PERMANENT purchases. Same 0-means-parked rule.
+Config.Passes = {
+	VIP = 0,            -- permanent income multiplier (Shop.VipIncomeMult)
+	PermanentSpeed = 0, -- permanent walkspeed bonus (Shop.PermanentSpeedBonus)
+}
+
+-- What the shop's items actually grant — one place to tune, read by
+-- ShopService (grants) and ShopUi (card labels) so they can never disagree.
+Config.Shop = {
+	StarterPackCash = 25e3,
+	StarterPackSpins = 3,
+	StarterPackRarity = "Rare",
+	Boost2xMinutes = 30,
+	Boost2xMult = 2,
+	VipIncomeMult = 1.5,
+	PermanentSpeedBonus = 6, -- studs/s on top of the base walkspeed
+	CashAmounts = { Small = 50e3, Medium = 500e3, Large = 5e6 },
 }
 
 Config.Plot = {

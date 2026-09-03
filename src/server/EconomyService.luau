@@ -4,6 +4,9 @@
 -- "Attributes"). Everything else reads money through this service.
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local EconomyService = {}
 
@@ -66,16 +69,29 @@ end
 -- rebirth multiplier is applied. Callers that show a figure before paying it
 -- (collect pads, popups) use this so the number never contradicts the balance.
 function EconomyService.PreviewIncome(player: Player, amount: number): number
-	if amount <= 0 or rebirthService == nil then
+	if amount <= 0 then
 		return amount
 	end
-	local ok, multiplier = pcall(function()
-		return rebirthService.GetMultiplier(player)
-	end)
-	if ok and typeof(multiplier) == "number" and multiplier > 0 then
-		return amount * multiplier
+	local multiplier = 1
+	if rebirthService ~= nil then
+		local ok, rebirthMult = pcall(function()
+			return rebirthService.GetMultiplier(player)
+		end)
+		if ok and typeof(rebirthMult) == "number" and rebirthMult > 0 then
+			multiplier *= rebirthMult
+		end
 	end
-	return amount
+	-- The shop's boosts ride the same choke point as rebirth, so the pads,
+	-- the popups and the balance can never disagree about what income is
+	-- worth. ShopService owns both attributes.
+	local boostUntil = player:GetAttribute("BoostUntil")
+	if typeof(boostUntil) == "number" and os.time() < boostUntil then
+		multiplier *= (Config.Shop :: any).Boost2xMult
+	end
+	if player:GetAttribute("VipActive") == true then
+		multiplier *= (Config.Shop :: any).VipIncomeMult
+	end
+	return amount * multiplier
 end
 
 -- Every income source funnels through here, so the rebirth multiplier is

@@ -128,29 +128,20 @@ function StealService.Start(services: any, map: any)
 		pending[player.UserId] = nil
 	end)
 
-	MarketplaceService.ProcessReceipt = function(receipt)
-		if receipt.ProductId ~= productId then
-			-- Not ours: leave it unprocessed so another handler can take it.
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
-		local buyer = Players:GetPlayerByUserId(receipt.PlayerId)
-		if buyer == nil then
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
+	-- ShopService owns the game's single ProcessReceipt; steals register a
+	-- handler into its router rather than clobbering the callback (which is
+	-- write-only, so two owners can never coexist).
+	servicesRef.ShopService.RegisterProductHandler(productId, function(receipt: any, buyer: Player)
 		local want = pending[receipt.PlayerId]
 		pending[receipt.PlayerId] = nil
 		if want == nil or os.clock() - want.at > PENDING_TIMEOUT or want.model.Parent == nil then
 			-- The target is gone. Granting anyway would take their Robux for
 			-- nothing, so refuse and let Roblox refund.
-			return Enum.ProductPurchaseDecision.NotProcessedYet
+			return false
 		end
-
 		local ok, moved = pcall(servicesRef.PlotService.StealSquishy, want.model, buyer)
-		if not ok or moved ~= true then
-			return Enum.ProductPurchaseDecision.NotProcessedYet
-		end
-		return Enum.ProductPurchaseDecision.PurchaseGranted
-	end
+		return ok and moved == true
+	end)
 end
 
 return StealService

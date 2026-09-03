@@ -68,6 +68,11 @@ local function baseSpeed(player: Player): number
 	if boost ~= nil and boost > 0 then
 		speed *= boost
 	end
+	-- The Permanent Speed pass (ShopService) rides on top of everything else.
+	local passBonus = tonumber(player:GetAttribute("PermSpeedBonus"))
+	if passBonus ~= nil and passBonus > 0 then
+		speed += passBonus
+	end
 	return speed
 end
 
@@ -513,7 +518,7 @@ function SquishyService.Start(services: any, map: any)
 		end)
 		-- Upgrades and wheel boosts change speed while the player is standing
 		-- there; re-apply whenever one moves.
-		for _, attribute in { "Upgrade_Speed", "Upgrade_Carry", "SpeedBoost" } do
+		for _, attribute in { "Upgrade_Speed", "Upgrade_Carry", "SpeedBoost", "PermSpeedBonus" } do
 			player:GetAttributeChangedSignal(attribute):Connect(function()
 				pcall(applySpeed, player)
 			end)

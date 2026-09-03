@@ -35,6 +35,7 @@ services.EnemyService = require(script.EnemyService) :: any
 services.SpawnService = require(script.SpawnService) :: any
 services.EventService = require(script.EventService) :: any
 services.DailyService = require(script.DailyService) :: any
+services.ShopService = require(script.ShopService) :: any
 services.StealService = require(script.StealService) :: any
 -- Studio only: its Start does nothing and publishes no remote elsewhere.
 services.DebugService = require(script.DebugService) :: any
@@ -57,6 +58,9 @@ for _, name in {
 	"SpawnService",
 	"EventService",
 	"DailyService",
+	-- Owns the game's single ProcessReceipt; StealService registers into it,
+	-- so the router must be standing first.
+	"ShopService",
 	-- Last: it walks the finished plots to attach its prompts.
 	"StealService",
 	-- Truly last: the dev panel drives every service above through the
