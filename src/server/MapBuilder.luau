@@ -45,6 +45,10 @@ local GROUND_Y = 1
 -- base. Thin on purpose: it replaces a 16-stud baseplate that reached down into
 -- the basements, and its top stays on the plane the baseplate's was, y = 0.
 local GROUND_SLAB_T = 1
+-- The classic stud grid, laid over the walkable ground: the grass field, the
+-- dirt border and the walkway. Repeats every STUD_TILE studs.
+local STUD_TEXTURE = "rbxassetid://6927295847"
+local STUD_TILE = 4
 -- Boundary wall footprint depth; its INNER face lines up with the walkway edge.
 local WALL_THICKNESS = 2
 -- Extra clearance either side of a plot in the boundary wall gap.
@@ -64,6 +68,53 @@ local TILE_TARGET = 13
 local BASEPLATE_COLOR = (Palette.Grass :: Color3):Lerp(Color3.fromRGB(120, 176, 140), 0.55)
 -- Awning stripes and prop timber reuse palette entries instead of new colours.
 local AWNING_STRIPES = { Palette.HouseRoof :: Color3, Palette.BaseTrim :: Color3 }
+
+-- Puts the stud grid on one part's top face, find-or-create so a restart never
+-- stacks copies.
+--
+-- A Texture, NOT a Decal. A Decal stretches a single image across the whole
+-- face, so the same picture on the 240 x 18 dirt strip came out as a handful of
+-- smeared blobs; a Texture repeats on a fixed stud pitch whatever the part's
+-- size. The face is Top for the same reason: these are floors.
+local function studTop(part: BasePart)
+	local existing = part:FindFirstChild("Studs")
+	if existing ~= nil and not existing:IsA("Texture") then
+		existing:Destroy() -- a Decal left over from a hand-edit: wrong class
+		existing = nil
+	end
+	local texture = existing :: Texture?
+	if texture == nil then
+		local created = Instance.new("Texture")
+		created.Name = "Studs"
+		created.Parent = part
+		texture = created
+	end
+	local studs = texture :: Texture
+	studs.Texture = STUD_TEXTURE
+	studs.Face = Enum.NormalId.Top
+	studs.StudsPerTileU = STUD_TILE
+	studs.StudsPerTileV = STUD_TILE
+end
+
+-- Every walkable surface outside the bases. Resolved from `root`, never from
+-- the generated scratch folder: on a hand-edited map the generated ground is
+-- thrown away and the saved parts are the ones actually in the world.
+local function studGround(root: Instance)
+	for _, name in { "FieldFloor", "DirtNorth", "DirtSouth", "DirtEast", "DirtWest" } do
+		local part = root:FindFirstChild(name)
+		if part ~= nil and part:IsA("BasePart") then
+			studTop(part)
+		end
+	end
+	local walkway = root:FindFirstChild("Walkway")
+	if walkway ~= nil then
+		for _, tile in walkway:GetChildren() do
+			if tile:IsA("BasePart") then
+				studTop(tile)
+			end
+		end
+	end
+end
 
 local function ensureFolder(parent: Instance, name: string): Folder
 	local existing = parent:FindFirstChild(name)
@@ -801,6 +852,11 @@ function MapBuilder.Build(): Map
 			end
 		end
 	end
+
+	-- Stud grid on the ground. Last, and against `root`: on a hand-edited map
+	-- the generated floors are about to be thrown away and the saved ones are
+	-- what the players walk on.
+	pcall(studGround, root)
 
 	-- Throw the generated geometry away on a hand-edited map: it only existed
 	-- so the computation above could run against real numbers.
