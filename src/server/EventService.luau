@@ -240,4 +240,17 @@ function EventService.Start(services: any, map: any)
 	end)
 end
 
+-- ------------------------------------------------------------------- debug --
+-- Entry point for DebugService (Studio only): pushes one countdown to `seconds`
+-- from now, so the board, the flash and the guaranteed spawn can all be watched
+-- without waiting out the real interval.
+function EventService.SetCountdown(index: number, seconds: number): boolean
+	local state = states[index]
+	if state == nil then
+		return false
+	end
+	state.nextAt = os.clock() + math.max(0, seconds)
+	return true
+end
+
 return EventService

@@ -36,6 +36,8 @@ services.SpawnService = require(script.SpawnService) :: any
 services.EventService = require(script.EventService) :: any
 services.DailyService = require(script.DailyService) :: any
 services.StealService = require(script.StealService) :: any
+-- Studio only: its Start does nothing and publishes no remote elsewhere.
+services.DebugService = require(script.DebugService) :: any
 
 local map = (require(script.MapBuilder) :: any).Build()
 require(script.LightingService).Apply()
@@ -57,6 +59,9 @@ for _, name in {
 	"DailyService",
 	-- Last: it walks the finished plots to attach its prompts.
 	"StealService",
+	-- Truly last: the dev panel drives every service above through the
+	-- `services` table, so they all have to be up before it opens for business.
+	"DebugService",
 } do
 	local ok, err = pcall(function()
 		services[name].Start(services, map)

@@ -558,4 +558,35 @@ function SquishyService.Start(services: any, map: any)
 	end)
 end
 
+-- ------------------------------------------------------------------- debug --
+-- Entry point for DebugService (Studio only): puts a named squishy straight
+-- into a player hands, skipping the field spawn and the pickup prompt. It runs
+-- the real pickup path, so carry speed, the alert radius and discovery all
+-- behave exactly as they would after lifting one off the grass.
+function SquishyService.GiveCarried(player: Player, squishyName: string, variantName: string?): boolean
+	if carrying[player] ~= nil then
+		return false
+	end
+	if Config.SquishyByName[squishyName] == nil then
+		return false
+	end
+	local created, model = pcall(SquishyFactory.create, squishyName, variantName)
+	if not created or model == nil then
+		warn(("[SquishyService] debug give could not build %s: %s"):format(squishyName, tostring(model)))
+		return false
+	end
+	-- onPickup refuses anything that is not sitting in the field folder.
+	model.Parent = mapRef.squishyFolder
+	local ok, err = pcall(onPickup, player, model)
+	if not ok then
+		warn(("[SquishyService] debug give failed: %s"):format(tostring(err)))
+	end
+	-- Anything that stopped the pickup short leaves a loose model in the field.
+	if carrying[player] == nil then
+		model:Destroy()
+		return false
+	end
+	return true
+end
+
 return SquishyService

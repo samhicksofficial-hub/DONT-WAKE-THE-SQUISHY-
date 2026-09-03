@@ -35,6 +35,13 @@ local EnemyService = {}
 -- Set at Start; the Stealth upgrade shrinks notice radii per player.
 local upgradeService: any = nil
 
+-- Every giant Start built, so the debug hooks at the bottom of this file can
+-- reach them. The state machine itself still works off its own closure.
+local enemies: { any } = {}
+-- Set only by EnemyService.SetFrozen (the Studio dev panel): while true the
+-- state machine skips its step, so the giants hold their state and position.
+local frozen = false
+
 local TICK = 0.15 -- seconds between state-machine steps
 local WAYPOINT_REACH = 6 -- studs (XZ) to count a waypoint as reached
 local ROOT_BASE_SIZE = Vector3.new(2, 2, 1)
@@ -382,6 +389,9 @@ local function stepReturning(enemy: any, map: any)
 end
 
 local function stepEnemy(enemy: any, map: any, squishyService: any)
+	if frozen then
+		return
+	end
 	local state = (enemy.model :: Model):GetAttribute("State")
 	if state == "Chasing" then
 		stepChasing(enemy, map, squishyService)
@@ -413,12 +423,78 @@ function EnemyService.Start(services: any, map: any)
 			local enemy = buildEnemy(cfg, spawnPos, map.enemyFolder)
 			enemy.waypointIndex = nearestWaypointIndex(map.enemyWaypoints, (enemy.root :: BasePart).Position)
 			applyState(enemy, "Sleeping")
+			table.insert(enemies, enemy)
 			task.spawn(runEnemy, enemy, map, squishyService)
 		end)
 		if not ok then
 			warn(("[EnemyService] failed to start enemy '%s': %s"):format(tostring(cfg.name), tostring(err)))
 		end
 	end
+end
+
+-- ------------------------------------------------------------------- debug --
+-- Entry points for DebugService (Studio only). Nothing in the shipped game
+-- calls these; they exist so the dev panel can drive the giants without
+-- reaching into the private state of this module.
+
+-- Stops (or restarts) every giant where it stands. A frozen giant keeps its
+-- state and its billboards, it just stops stepping.
+function EnemyService.SetFrozen(value: boolean)
+	frozen = value == true
+	for _, enemy in enemies do
+		pcall(function()
+			local humanoid = enemy.humanoid :: Humanoid
+			if frozen then
+				-- Cancel the walk already in flight, or the giant keeps striding
+				-- to whatever goal it was given before the freeze.
+				humanoid:MoveTo((enemy.root :: BasePart).Position)
+				humanoid.WalkSpeed = 0
+			else
+				local state = (enemy.model :: Model):GetAttribute("State")
+				applyState(enemy, if typeof(state) == "string" then state else "Sleeping")
+			end
+		end)
+	end
+end
+
+function EnemyService.IsFrozen(): boolean
+	return frozen
+end
+
+-- Sends every giant after `player` right now, ignoring both the notice radius
+-- and the post-chase cooldown. Returns how many took the order.
+function EnemyService.WakeOn(player: Player): number
+	local woken = 0
+	for _, enemy in enemies do
+		local ok = pcall(function()
+			local model = enemy.model :: Model
+			-- TargetUserId first: applyState clears it for every non-chase state.
+			model:SetAttribute("TargetUserId", player.UserId)
+			enemy.chaseEndsAt = os.clock() + enemy.cfg.chaseDuration
+			enemy.noticeBlockedUntil = 0
+			applyState(enemy, "Chasing")
+		end)
+		if ok then
+			woken += 1
+		end
+	end
+	return woken
+end
+
+-- Ends every chase and blocks the next notice for the usual cooldown, so a
+-- test can be reset without walking out of the field.
+function EnemyService.CalmAll(): number
+	local calmed = 0
+	for _, enemy in enemies do
+		local ok = pcall(function()
+			enemy.noticeBlockedUntil = os.clock() + enemy.cfg.sleepCooldown
+			applyState(enemy, "Sleeping")
+		end)
+		if ok then
+			calmed += 1
+		end
+	end
+	return calmed
 end
 
 return EnemyService

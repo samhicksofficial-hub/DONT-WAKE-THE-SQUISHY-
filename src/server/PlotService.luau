@@ -886,6 +886,31 @@ local function showUpgradePad(plot: PlotRecord, slot: SlotRecord)
 	refreshSlotLevel(plot, slot)
 end
 
+-- Empties one slot: the squishy, its pending cash, its level and its plaque.
+-- The slot itself stays unlocked and keeps its furniture, so it is ready to
+-- take another squishy immediately.
+local function clearSlot(plot: PlotRecord, slot: SlotRecord)
+	if slot.squishy ~= nil then
+		slot.squishy:Destroy()
+	end
+	slot.squishy = nil
+	slot.occupied = false
+	refreshPlacePrompt(slot)
+	slot.pending = 0
+	slot.income = 0
+	slot.baseIncome = 0
+	slot.level = 1
+	local pad = slot.upgradePad
+	if pad ~= nil then
+		pad.CanTouch = false
+		local gui = pad:FindFirstChild("UpgradeGui")
+		if gui ~= nil and gui:IsA("SurfaceGui") then
+			gui.Enabled = false
+		end
+	end
+	updateCollectLabel(plot, slot)
+end
+
 local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	local model = SquishyFactory.create(def.name, def.variant)
 	local prompt = model:FindFirstChild("PickupPrompt", true)
@@ -1794,25 +1819,7 @@ function PlotService.StealSquishy(model: Model, thief: Player): boolean
 	updateCollectLabel(thiefPlot, target)
 
 	-- Clear the victim's slot: the squishy, its pending cash and its pad.
-	if victimSlot.squishy ~= nil then
-		victimSlot.squishy:Destroy()
-	end
-	victimSlot.squishy = nil
-	victimSlot.occupied = false
-	refreshPlacePrompt(victimSlot)
-	victimSlot.pending = 0
-	victimSlot.income = 0
-	victimSlot.baseIncome = 0
-	victimSlot.level = 1
-	local pad = victimSlot.upgradePad
-	if pad ~= nil then
-		pad.CanTouch = false
-		local gui = pad:FindFirstChild("UpgradeGui")
-		if gui ~= nil and gui:IsA("SurfaceGui") then
-			gui.Enabled = false
-		end
-	end
-	updateCollectLabel(victimPlot, victimSlot)
+	clearSlot(victimPlot, victimSlot)
 	return true
 end
 
@@ -1897,6 +1904,94 @@ function PlotService.BuildSlotFurniture(model: Model, baseCFrame: CFrame, floorT
 		local pad = buildCollectPadGeometry(model, baseCFrame, index, layout.floorTop, layout.localX, layout.localZ)
 		ensurePendingLabel(pad)
 	end
+end
+
+-- ------------------------------------------------------------------- debug --
+-- Entry points for DebugService (Studio only). Nothing in the shipped game
+-- calls these; they exist so the dev panel can drive plot state without
+-- reaching into the private tables of this module.
+
+-- Opens every still-locked slot on the plot, free. Returns how many opened.
+function PlotService.DebugUnlockAll(player: Player): number
+	local plot = plots[player]
+	if plot == nil then
+		return 0
+	end
+	local opened = 0
+	for _, slot in plot.slots do
+		if not slot.unlocked then
+			local ok, err = pcall(unlockSlot, plot, slot)
+			if ok then
+				opened += 1
+			else
+				warn(("[PlotService] debug unlock of slot %d failed: %s"):format(slot.index, tostring(err)))
+			end
+		end
+	end
+	return opened
+end
+
+-- Empties every occupied slot, binning the squishies and their pending cash.
+function PlotService.DebugClearSlots(player: Player): number
+	local plot = plots[player]
+	if plot == nil then
+		return 0
+	end
+	local cleared = 0
+	for _, slot in plot.slots do
+		if slot.occupied then
+			local ok, err = pcall(clearSlot, plot, slot)
+			if ok then
+				cleared += 1
+			else
+				warn(("[PlotService] debug clear of slot %d failed: %s"):format(slot.index, tostring(err)))
+			end
+		end
+	end
+	return cleared
+end
+
+-- Sets the storey counts and rebuilds the base around them, exactly as buying
+-- a floor does. Placed squishies and their levels ride through the rebuild;
+-- shrinking past what is placed drops whatever no longer has a slot.
+function PlotService.DebugSetFloors(player: Player, above: number, below: number): boolean
+	if plots[player] == nil then
+		return false
+	end
+	player:SetAttribute("FloorsAbove", math.clamp(math.floor(above), 0, Config.Plot.MaxAbove :: number))
+	player:SetAttribute("FloorsBelow", math.clamp(math.floor(below), 0, Config.Plot.MaxBelow :: number))
+	rebuildPlot(player)
+	return true
+end
+
+-- What the dev panel prints in its status block.
+function PlotService.DebugSnapshot(player: Player): any
+	local plot = plots[player]
+	if plot == nil then
+		return nil
+	end
+	local unlocked, occupied, income, pending = 0, 0, 0, 0
+	for _, slot in plot.slots do
+		if slot.unlocked then
+			unlocked += 1
+		end
+		if slot.occupied then
+			occupied += 1
+			income += slot.income
+			pending += slot.pending
+		end
+	end
+	local above, below = floorCounts(player)
+	return {
+		spotIndex = plot.spotIndex,
+		slots = #plot.slots,
+		unlocked = unlocked,
+		occupied = occupied,
+		income = income,
+		pending = pending,
+		floorsAbove = above,
+		floorsBelow = below,
+	}
 end
 
 return PlotService
