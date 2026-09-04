@@ -128,6 +128,16 @@ local function stand(character: Model, entry: Entry)
 			joint.Enabled = true
 		end
 	end
+	-- Physics back to whoever should have it, which for a live character is its
+	-- own player. Auto rather than SetNetworkOwner(player), because the engine
+	-- already knows the answer and the character may be gone by now.
+	for _, part in character:GetDescendants() do
+		if part:IsA("BasePart") then
+			pcall(function()
+				part:SetNetworkOwnershipAuto()
+			end)
+		end
+	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid ~= nil and humanoid.Health > 0 then
 		humanoid.PlatformStand = false
@@ -136,9 +146,35 @@ local function stand(character: Model, entry: Entry)
 	end
 end
 
--- Knocks `player` down for `seconds`. Returns false when there is nothing to
--- knock down (no character, or already dead), so callers can fall back.
-function RagdollService.Ragdoll(player: Player, seconds: number?): boolean
+-- Throws the whole body, having first taken its physics off the client.
+--
+-- A character's parts are owned by its own player, and the OWNER's state wins:
+-- measured, a velocity the server writes reads 82 studs/s on the frame it is
+-- written and 0 on the very next one. Owning the assemblies for the duration of
+-- the knockdown is what makes a knockback actually land. Ownership goes back on
+-- the way up, in stand().
+--
+-- Every part, not just the root: a ragdoll is many assemblies now, and throwing
+-- only the root would yank it out from under limbs that stayed put.
+local function throwBody(character: Model, impulse: Vector3)
+	for _, part in character:GetDescendants() do
+		if part:IsA("BasePart") then
+			pcall(function()
+				part:SetNetworkOwner(nil)
+			end)
+		end
+	end
+	for _, part in character:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.AssemblyLinearVelocity = impulse
+		end
+	end
+end
+
+-- Knocks `player` down for `seconds`, optionally throwing them with `impulse`.
+-- Returns false when there is nothing to knock down (no character, or already
+-- dead), so callers can fall back.
+function RagdollService.Ragdoll(player: Player, seconds: number?, impulse: Vector3?): boolean
 	local character = player.Character
 	if character == nil or character.Parent == nil then
 		return false
@@ -158,6 +194,19 @@ function RagdollService.Ragdoll(player: Player, seconds: number?): boolean
 		end
 		entry = built
 		active[character] = entry
+	end
+
+	-- Thrown AFTER going limp, never before: releasing the joints re-splits the
+	-- character into a fresh set of assemblies, and a velocity written to the
+	-- old one goes with it. Deferred once more because the split does not
+	-- necessarily finish inside this frame.
+	if impulse ~= nil then
+		pcall(throwBody, character, impulse)
+		task.defer(function()
+			if active[character] ~= nil then
+				pcall(throwBody, character, impulse)
+			end
+		end)
 	end
 
 	-- A second hit while already down EXTENDS the stay rather than starting a

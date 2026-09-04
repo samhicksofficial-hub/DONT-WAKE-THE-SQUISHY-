@@ -279,7 +279,7 @@ local function slap(enemy: any, target: Player, targetRoot: BasePart, squishySer
 		away = Vector3.new(0, 0, -1)
 	end
 	away = away.Unit
-	targetRoot.AssemblyLinearVelocity = away * cfg.flingSpeed + Vector3.new(0, cfg.flingSpeed * 0.6, 0)
+	local throw = away * cfg.flingSpeed + Vector3.new(0, cfg.flingSpeed * 0.6, 0)
 
 	local targetHumanoid: Humanoid? = nil
 	local character = targetRoot.Parent
@@ -290,19 +290,26 @@ local function slap(enemy: any, target: Player, targetRoot: BasePart, squishySer
 		-- Go properly limp if RagdollService is up, which also sets and clears
 		-- PlatformStand. The bare flag is the fallback: it stops the controller
 		-- and tips the character over, just without the limbs swinging.
+		-- The ragdoll does the throwing too: it has to go limp before the body
+		-- is thrown (releasing the joints re-splits the assemblies and drops
+		-- any velocity written to the old one) and it has to own the physics
+		-- while it flies, which is the same lifetime it already manages.
 		local ragdolled = false
 		if ragdollService ~= nil then
-			local ok, done = pcall(ragdollService.Ragdoll, target, cfg.stunTime)
+			local ok, done = pcall(ragdollService.Ragdoll, target, cfg.stunTime, throw)
 			ragdolled = ok and done == true
 		end
 		if not ragdolled then
 			targetHumanoid.PlatformStand = true
+			targetRoot.AssemblyLinearVelocity = throw
 			task.delay(cfg.stunTime, function()
 				if targetHumanoid.Parent ~= nil then
 					targetHumanoid.PlatformStand = false
 				end
 			end)
 		end
+	else
+		targetRoot.AssemblyLinearVelocity = throw
 	end
 
 	pcall(function()
