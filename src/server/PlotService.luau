@@ -201,6 +201,74 @@ local function newIcon(parent: Instance, image: string, order: number, heightSca
 	return icon
 end
 
+-- A price tag readable from across the base: a rounded dark card with a fat
+-- outline, a small padlock, the price in big money-green, and a caption under
+-- it. Returns the board plus the two labels the caller keeps up to date.
+--
+-- Both things that sell a floor or a slot use this, because both were unreadable
+-- in their own way. The slot pads stacked bare labels on a 5 x 3.6 board and gave
+-- the padlock a third of the height, and TextScaled caps glyphs at 100px however
+-- big the box is — so the price could never fill its share and disappeared at any
+-- distance, over a NEON pad that washed pale text out anyway. The floor post was
+-- worse: a padlock and nothing else, with the price only ever in the proximity
+-- prompt, which needs you within twelve studs to read it.
+local PRICE_CARD_BG = Color3.fromRGB(24, 26, 34)
+
+local function buildPriceCard(
+	adornee: BasePart,
+	name: string,
+	widthStuds: number,
+	heightStuds: number,
+	offsetY: number,
+	maxDistance: number,
+	caption: string
+): (BillboardGui, TextLabel, TextLabel)
+	local gui = newBillboard(adornee, name, widthStuds, heightStuds, offsetY, maxDistance)
+
+	-- A dark backing, so the price reads against a pale wall instead of
+	-- glowing into it.
+	local card = Instance.new("Frame")
+	card.Name = "Card"
+	card.Size = UDim2.fromScale(1, 1)
+	card.BackgroundColor3 = PRICE_CARD_BG
+	card.BackgroundTransparency = 0.15
+	card.BorderSizePixel = 0
+	card.ZIndex = 1
+	card.Parent = gui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.2, 0)
+	corner.Parent = card
+	local outline = Instance.new("UIStroke")
+	outline.Thickness = 3
+	outline.Color = Color3.new(0, 0, 0)
+	outline.LineJoinMode = Enum.LineJoinMode.Round
+	outline.Parent = card
+
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Vertical
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = card
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0.07, 0)
+	padding.PaddingBottom = UDim.new(0.07, 0)
+	padding.Parent = card
+
+	-- Explicit ZIndex on every child: a BillboardGui paints same-ZIndex
+	-- siblings in an order that is not worth relying on, which is what was
+	-- already noted on the upgrade plaque.
+	local lock = newIcon(card, Config.Icons.Lock, 0, 0.24)
+	lock.ZIndex = 2
+	-- The price takes the lion's share of the card; the padlock only has to say
+	-- "locked", and it says that at a glance whatever size it is.
+	local price = newLabel(card, "", COLOR_MONEY, 1, 0.48)
+	price.ZIndex = 2
+	local subtitle = newLabel(card, caption, COLOR_WHITE, 2, 0.22)
+	subtitle.ZIndex = 2
+	return gui, price, subtitle
+end
+
 -- ---------------------------------------------------------------- pedestals --
 -- An Ionic column under every squishy, so a placed one stands clear of the
 -- upgrade plaque in front of it instead of hiding behind it.
@@ -609,6 +677,13 @@ local function unlockSlot(plot: PlotRecord, slot: SlotRecord)
 	if pad ~= nil then
 		pad:Destroy()
 	end
+	-- Destroyed by hand, because the price card hangs off the PEDESTAL rather
+	-- than the pad: killing the pad no longer takes the board with it, and an
+	-- unlocked slot would keep advertising its own price forever.
+	local gui = slot.unlockGui
+	if gui ~= nil then
+		gui:Destroy()
+	end
 	slot.unlockPad = nil
 	slot.unlockGui = nil
 	slot.platform.Color = Palette.SlotPlatform
@@ -661,19 +736,19 @@ local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	pad.CanCollide = false
 	pad.Transparency = 1
 	pad.CanTouch = false
-	local gui = newBillboard(pad, "UnlockGui", 5, 3.6, 3.4, 90)
+	-- Wider and taller than the pad it stands over: this is the only thing that
+	-- tells a player what the slot costs, so it has to carry across the room.
+	-- Hung over the PEDESTAL, not the pad. Anchored to the pad the card sat down
+	-- among the platform and the column and was sliced in half by them at every
+	-- offset tried; the gear stands in the basement already prove the column top
+	-- is the anchor that reads. Falls back to the pad on a saved shell that has
+	-- no column to hang it from.
+	local anchor = slot.pedestalTop or pad
+	local gui, priceLabel = buildPriceCard(anchor, "UnlockGui", 7, 3.8, 4, 130, "Unlock")
 	gui.Enabled = false
-	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Vertical
-	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	layout.Parent = gui
-	-- A padlock above the price: locked slots read as locked before the price
-	-- is legible, which is what tells a new player the slot is buyable at all.
-	newIcon(gui, Config.Icons.Lock, 0, 0.34)
 	-- Prices are per position ON the ground floor, not per global slot index.
 	local price = Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
-	newLabel(gui, Util.formatMoney(price), COLOR_MONEY, 1, 0.38)
-	newLabel(gui, "Unlock", COLOR_WHITE, 2, 0.28)
+	priceLabel.Text = Util.formatMoney(price)
 	slot.unlockPad = pad
 	slot.unlockGui = gui
 	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
@@ -1751,10 +1826,11 @@ function buildFloorPrompt(plot: PlotRecord)
 	post.CanCollide = false
 	post.CanTouch = true
 
-	-- The prompt only shows its text once you are within 12 studs; the padlock
-	-- floating over the post is what marks it from across the base.
-	local postGui = newBillboard(post, "FloorIcon", 3.4, 3.4, 4.2, 120)
-	newIcon(postGui, Config.Icons.Lock, 0, 1)
+	-- The prompt only shows its text once you are within 12 studs, so the board
+	-- over the post carries the price itself. It used to be a bare padlock, and
+	-- the cost of the next floor — the single biggest purchase in the game —
+	-- was invisible until you were standing on top of it.
+	local postGui, floorPrice, floorCaption = buildPriceCard(post, "FloorIcon", 7.5, 4, 5, 160, "Next Floor")
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "FloorPrompt"
@@ -1779,6 +1855,10 @@ function buildFloorPrompt(plot: PlotRecord)
 		prompt.Enabled = true
 		post.Transparency = 0
 		postGui.Enabled = true
+		-- The board says the price and which way the building grows; the prompt
+		-- repeats it for anyone close enough to read the hold hint.
+		floorPrice.Text = Util.formatMoney(cost)
+		floorCaption.Text = if direction == "below" then "Basement" else "Upstairs"
 		prompt.ObjectText = ("Next Floor (%s)"):format(direction == "below" and "basement" or "upstairs")
 		prompt.ActionText = ("%s  Unlock!"):format(Util.formatMoney(cost))
 	end
