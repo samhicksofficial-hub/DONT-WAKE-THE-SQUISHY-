@@ -200,12 +200,18 @@ local function buildSlices(wheel: any, rewards: { any }, wedgeCount: number)
 	spokes.ZIndex = 2
 	spokes.Parent = pie
 	for i = 1, wedgeCount do
+		local seam = math.rad(-(i - 1) * span + span / 2)
 		local spoke = Instance.new("Frame")
 		spoke.Name = ("Spoke%d"):format(i)
 		spoke.Size = UDim2.new(0, SPOKE_WIDTH, 0.5, 0)
-		spoke.AnchorPoint = Vector2.new(0.5, 1)
-		spoke.Position = UDim2.fromScale(0.5, 0.5)
-		spoke.Rotation = -(i - 1) * span + span / 2
+		-- Rotation pivots on a frame's own centre, NOT on its AnchorPoint, so a
+		-- bar hung off the hub by its bottom edge swings away from the hub and
+		-- lands beside its seam instead of on it. Anchoring the bar at its own
+		-- centre makes the two the same point; that centre then goes half a
+		-- radius out along the seam, which is a quarter of the wheel across.
+		spoke.AnchorPoint = Vector2.new(0.5, 0.5)
+		spoke.Position = UDim2.fromScale(0.5 + 0.25 * math.sin(seam), 0.5 - 0.25 * math.cos(seam))
+		spoke.Rotation = math.deg(seam)
 		spoke.BackgroundColor3 = Color3.new(1, 1, 1)
 		spoke.BackgroundTransparency = SPOKE_TRANSPARENCY
 		spoke.BorderSizePixel = 0
