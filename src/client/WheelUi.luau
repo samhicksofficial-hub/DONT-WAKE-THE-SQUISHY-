@@ -7,7 +7,8 @@
 -- (Pattern[i].Rotation = -(i - 1) * 60, wrapped: 0, 300, 240, 180, 120, 60).
 -- GuiObject.Rotation is clockwise-positive, so parking wedge i under the arrow
 -- means turning the wheel to +(i - 1) * (360 / wedgeCount) degrees. Nothing here
--- moves or resizes a wedge — we only set text, Visible and Rotation.
+-- moves or resizes one of the pack's own wedges — we only set text and Rotation,
+-- and draw the coloured slices in behind them.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -31,9 +32,7 @@ local DIM_TEXT = 0.35
 --
 -- The squishy wedges borrow the rarity colours the game already uses for those
 -- names everywhere else — the index, the pickup labels, the collect pads — so
--- the wheel is not inventing a second language for the same three words. The
--- wheel face is one flat image, so a wedge cannot be filled; the colour has to
--- come from the label, its odds caption and the icon above them.
+-- the wheel is not inventing a second language for the same three words.
 local WHEEL_CASH = Color3.fromRGB(85, 255, 85)
 local WHEEL_SPEED = Color3.fromRGB(96, 210, 255)
 
@@ -46,6 +45,62 @@ local function wedgeLook(reward: any): (Color3, string)
 		return WHEEL_SPEED, Config.Icons.Coil
 	end
 	return WHEEL_CASH, Config.Icons.Cash
+end
+
+-- ---------------------------------------------------------------- slices --
+--
+-- The pack's wheel face is a flat black disc, and no tint can lift it: the
+-- black is black pixels, and ImageColor3 multiplies, so black stays black. The
+-- colour has to be drawn on top of it.
+--
+-- Clipping cannot cut the slices. Roblox does not clip a descendant that
+-- carries a Rotation of its own — measured, a 45-degree 600x600 child of a
+-- 200x200 ClipsDescendants frame renders at its full size — so the usual trick
+-- of nesting two rotated half-plane clippers just draws six whole circles.
+--
+-- Masking by gradient does work, and needs no rotation at all. A UIGradient
+-- whose Transparency steps from 1 to 0 at offset 0.5 cuts its object along a
+-- straight line through the object's centre, at whatever angle the gradient is
+-- set to. One of those on a circle leaves a half-disc. A second one, carried by
+-- a CanvasGroup wrapped around the first (a CanvasGroup composites its children
+-- to a texture, so a gradient on it masks the whole subtree), cuts that half
+-- again. Two cuts (180 - span) degrees apart leave exactly one wedge.
+local SLICES_NAME = "Slices"
+-- Fraction of the wheel image the black face covers, inside the moulded rim.
+local SLICE_SPAN = 0.88
+-- HSV value every slice settles on. The rarity colours are authored bright for
+-- text; straight onto a slice they glare, and darkening them far enough to sit
+-- quietly turns the Legendary orange to mud. This is where they still read as
+-- themselves next to the game's other panels.
+local SLICE_VALUE = 0.78
+-- Half-width of the gradient's step, in gradient offset. Not zero: a couple of
+-- pixels of ramp is the only anti-aliasing a slice edge gets.
+local SLICE_EDGE = 0.004
+local SPOKE_WIDTH = 3
+local SPOKE_TRANSPARENCY = 0.6
+-- The slice behind a label now carries the reward's colour, so the label itself
+-- goes white. A rarity's own blue on a blue slice is legible but muddy; white
+-- over the pack's black stroke reads cleanly on all six.
+local LABEL_COLOR = Color3.new(1, 1, 1)
+
+local function sliceColour(colour: Color3): Color3
+	local hue, saturation = colour:ToHSV()
+	return Color3.fromHSV(hue, math.clamp(saturation * 1.1 + 0.08, 0, 1), SLICE_VALUE)
+end
+
+-- Masks `object` down to the half-plane on one side of a line through its
+-- centre. `rotation` is the gradient's direction, and the half it points into is
+-- the half that survives.
+local function halfPlane(object: Instance, rotation: number)
+	local gradient = Instance.new("UIGradient")
+	gradient.Rotation = rotation
+	gradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.5 - SLICE_EDGE, 1),
+		NumberSequenceKeypoint.new(0.5 + SLICE_EDGE, 0),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	gradient.Parent = object
 end
 
 local WheelUi = {}
@@ -72,6 +127,91 @@ end
 local function formatCountdown(seconds: number): string
 	local total = math.max(0, math.floor(seconds + 0.5))
 	return ("Next in %d:%02d"):format(math.floor(total / 60), total % 60)
+end
+
+-- Paints the pizza behind the pack's labels. `wheel` is the SpinWheel image, and
+-- the slices go in as one more of its children so they turn with it on a spin.
+local function buildSlices(wheel: any, rewards: { any }, wedgeCount: number)
+	local span = 360 / wedgeCount
+	if span > 180 then
+		-- A wedge wider than a half-turn is not the overlap of two half-planes,
+		-- so it cannot be drawn this way. Leave the pack's black face alone.
+		return
+	end
+
+	-- Destroyed rather than reused, so a second Start() cannot stack a second
+	-- set of slices over the first.
+	local previous = child(wheel, SLICES_NAME)
+	if previous then
+		(previous :: Instance):Destroy()
+	end
+
+	local background = child(wheel, "Background")
+
+	local pie = Instance.new("Frame")
+	pie.Name = SLICES_NAME
+	pie.Size = UDim2.fromScale(SLICE_SPAN, SLICE_SPAN)
+	pie.AnchorPoint = Vector2.new(0.5, 0.5)
+	pie.Position = UDim2.fromScale(0.5, 0.5)
+	pie.BackgroundTransparency = 1
+	-- Just above the pack's black face (ZIndex 0) and well below its labels
+	-- (ZIndex 6), which is where the colour belongs.
+	pie.ZIndex = (if background then background.ZIndex else 0) + 1
+	pie.Parent = wheel
+
+	for i = 1, wedgeCount do
+		local reward = rewards[i]
+		local colour = Color3.new(1, 1, 1)
+		if reward then
+			colour = (wedgeLook(reward))
+		end
+		-- Wedge i sits `span` degrees counter-clockwise of the one before it, so
+		-- its middle is at -(i - 1) * span measured clockwise from the top.
+		local middle = -(i - 1) * span
+
+		local group = Instance.new("CanvasGroup")
+		group.Name = ("Slice%d"):format(i)
+		group.Size = UDim2.fromScale(1, 1)
+		group.AnchorPoint = Vector2.new(0.5, 0.5)
+		group.Position = UDim2.fromScale(0.5, 0.5)
+		group.BackgroundTransparency = 1
+		group.ZIndex = 1
+		group.Parent = pie
+		halfPlane(group, middle + span / 2 - 180)
+
+		local disc = Instance.new("Frame")
+		disc.Name = "Disc"
+		disc.Size = UDim2.fromScale(1, 1)
+		disc.BackgroundColor3 = sliceColour(colour)
+		disc.BorderSizePixel = 0
+		disc.Parent = group
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0.5, 0) -- a square frame, rounded into a circle
+		corner.Parent = disc
+		halfPlane(disc, middle - span / 2)
+	end
+
+	-- A hairline down every seam, so neighbouring slices read as cut rather than
+	-- merely touching.
+	local spokes = Instance.new("Frame")
+	spokes.Name = "Spokes"
+	spokes.Size = UDim2.fromScale(1, 1)
+	spokes.BackgroundTransparency = 1
+	spokes.ZIndex = 2
+	spokes.Parent = pie
+	for i = 1, wedgeCount do
+		local spoke = Instance.new("Frame")
+		spoke.Name = ("Spoke%d"):format(i)
+		spoke.Size = UDim2.new(0, SPOKE_WIDTH, 0.5, 0)
+		spoke.AnchorPoint = Vector2.new(0.5, 1)
+		spoke.Position = UDim2.fromScale(0.5, 0.5)
+		spoke.Rotation = -(i - 1) * span + span / 2
+		spoke.BackgroundColor3 = Color3.new(1, 1, 1)
+		spoke.BackgroundTransparency = SPOKE_TRANSPARENCY
+		spoke.BorderSizePixel = 0
+		spoke.ZIndex = 2
+		spoke.Parent = spokes
+	end
 end
 
 function WheelUi.Start()
@@ -113,6 +253,12 @@ function WheelUi.Start()
 
 	-- ---------- static labelling ----------
 
+	local sliced, sliceErr = pcall(buildSlices, wheel, rewards, wedgeCount)
+	if not sliced then
+		-- Only the colour behind the labels is lost; the wheel still spins.
+		warn(("[WheelUi] slices failed: %s"):format(tostring(sliceErr)))
+	end
+
 	for i = 1, wedgeCount do
 		local ok, err = pcall(function()
 			local node = child(pattern, tostring(i))
@@ -121,8 +267,8 @@ function WheelUi.Start()
 				return
 			end
 			node.Text = reward.label
-			local color, icon = wedgeLook(reward)
-			node.TextColor3 = color
+			local _, icon = wedgeLook(reward)
+			node.TextColor3 = LABEL_COLOR
 			-- The pack nests an icon (Image) with a "Chance" caption on each
 			-- wedge; fill it with the reward's odds so no placeholder shows.
 			local image = child(node, "Image")
@@ -134,7 +280,7 @@ function WheelUi.Start()
 			local chance = child(image, "Chance")
 			if chance and totalWeight > 0 then
 				chance.Text = ("%d%%"):format(math.round((reward.weight or 0) / totalWeight * 100))
-				chance.TextColor3 = color
+				chance.TextColor3 = LABEL_COLOR
 			end
 		end)
 		if not ok then
