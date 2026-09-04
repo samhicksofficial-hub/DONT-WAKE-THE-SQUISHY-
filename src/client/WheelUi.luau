@@ -25,6 +25,29 @@ local INVOKE_TIMEOUT = 10                 -- seconds before we give up on the Re
 local DIM_COLOR = Color3.fromRGB(120, 120, 120)
 local DIM_TEXT = 0.35
 
+-- Every wedge shipped white, with the SAME cash-stack icon on all six, so a
+-- Legendary and a $500 read identically until you stopped to read the words.
+-- Each reward now wears its own colour and its own icon.
+--
+-- The squishy wedges borrow the rarity colours the game already uses for those
+-- names everywhere else — the index, the pickup labels, the collect pads — so
+-- the wheel is not inventing a second language for the same three words. The
+-- wheel face is one flat image, so a wedge cannot be filled; the colour has to
+-- come from the label, its odds caption and the icon above them.
+local WHEEL_CASH = Color3.fromRGB(85, 255, 85)
+local WHEEL_SPEED = Color3.fromRGB(96, 210, 255)
+
+-- The colour and icon a reward wears on its wedge.
+local function wedgeLook(reward: any): (Color3, string)
+	if reward.kind == "squishy" then
+		local rarity = (Config.RarityByName :: any)[reward.rarity]
+		return (rarity and rarity.color) or Color3.new(1, 1, 1), Config.Icons.Gift
+	elseif reward.kind == "speed" then
+		return WHEEL_SPEED, Config.Icons.Coil
+	end
+	return WHEEL_CASH, Config.Icons.Cash
+end
+
 local WheelUi = {}
 
 local player = Players.LocalPlayer
@@ -98,11 +121,20 @@ function WheelUi.Start()
 				return
 			end
 			node.Text = reward.label
+			local color, icon = wedgeLook(reward)
+			node.TextColor3 = color
 			-- The pack nests an icon (Image) with a "Chance" caption on each
 			-- wedge; fill it with the reward's odds so no placeholder shows.
-			local chance = child(child(node, "Image"), "Chance")
+			local image = child(node, "Image")
+			if image and image:IsA("ImageLabel") then
+				-- Swapped, not tinted: these icons carry their own colours, and
+				-- multiplying a gift or a coil down to one hue only muddies it.
+				image.Image = icon
+			end
+			local chance = child(image, "Chance")
 			if chance and totalWeight > 0 then
 				chance.Text = ("%d%%"):format(math.round((reward.weight or 0) / totalWeight * 100))
+				chance.TextColor3 = color
 			end
 		end)
 		if not ok then
