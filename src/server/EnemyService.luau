@@ -34,6 +34,7 @@ local EnemyService = {}
 
 -- Set at Start; the Stealth upgrade shrinks notice radii per player.
 local upgradeService: any = nil
+local ragdollService: any = nil
 
 -- Every giant Start built, so the debug hooks at the bottom of this file can
 -- reach them. The state machine itself still works off its own closure.
@@ -286,12 +287,22 @@ local function slap(enemy: any, target: Player, targetRoot: BasePart, squishySer
 		targetHumanoid = character:FindFirstChildOfClass("Humanoid")
 	end
 	if targetHumanoid then
-		targetHumanoid.PlatformStand = true
-		task.delay(cfg.stunTime, function()
-			if targetHumanoid.Parent ~= nil then
-				targetHumanoid.PlatformStand = false
-			end
-		end)
+		-- Go properly limp if RagdollService is up, which also sets and clears
+		-- PlatformStand. The bare flag is the fallback: it stops the controller
+		-- and tips the character over, just without the limbs swinging.
+		local ragdolled = false
+		if ragdollService ~= nil then
+			local ok, done = pcall(ragdollService.Ragdoll, target, cfg.stunTime)
+			ragdolled = ok and done == true
+		end
+		if not ragdolled then
+			targetHumanoid.PlatformStand = true
+			task.delay(cfg.stunTime, function()
+				if targetHumanoid.Parent ~= nil then
+					targetHumanoid.PlatformStand = false
+				end
+			end)
+		end
 	end
 
 	pcall(function()
@@ -416,6 +427,7 @@ function EnemyService.Start(services: any, map: any)
 	local config = services.Config
 	local squishyService = services.SquishyService
 	upgradeService = services.UpgradeService
+	ragdollService = services.RagdollService
 
 	for index, cfg in config.Enemies :: { any } do
 		local spawnPos = map.enemySpawns[index] or map.enemySpawns[1] or map.fieldCenter

@@ -39,6 +39,7 @@ services.ShopService = require(script.ShopService) :: any
 services.GearService = require(script.GearService) :: any
 services.StealService = require(script.StealService) :: any
 services.PortalService = require(script.PortalService) :: any
+services.RagdollService = require(script.RagdollService) :: any
 services.SaveService = require(script.SaveService) :: any
 -- Studio only: its Start does nothing and publishes no remote elsewhere.
 services.DebugService = require(script.DebugService) :: any
@@ -56,6 +57,8 @@ for _, name in {
 	"WheelService",
 	"PlotService",
 	"SquishyService",
+	-- Before EnemyService: a giant slaps a player the moment it is running.
+	"RagdollService",
 	"EnemyService",
 	-- Last: it moves arriving characters onto the base PlotService just built.
 	"SpawnService",
