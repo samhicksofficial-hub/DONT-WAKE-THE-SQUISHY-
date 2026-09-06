@@ -77,7 +77,9 @@ Config.Squishies = {
 	{ name = "Rainbow Melt",    rarity = "Epic",      color = Color3.fromRGB(190, 220, 120), sparkle = true,  shape = "dumplingmesh" },
 	{ name = "Pink Brain",      rarity = "Epic",      color = Color3.fromRGB(240, 158, 170), sparkle = false, shape = "brainmesh" },
 	{ name = "Blobfish",        rarity = "Epic",      color = Color3.fromRGB(122, 170, 230), sparkle = false, shape = "blobfishmesh" },
-	{ name = "Sugar Baby",      rarity = "Epic",      color = Color3.fromRGB(230, 120, 198), sparkle = true,  shape = "babymesh" },
+	-- titleLift: the baby is tall, so the default title height put its name
+	-- through the ceiling of a plot storey; this hangs it just over the head.
+	{ name = "Sugar Baby",      rarity = "Epic",      color = Color3.fromRGB(230, 120, 198), sparkle = true,  shape = "babymesh", titleLift = 0.7 },
 	{ name = "Rainbow Butter",  rarity = "Epic",      color = Color3.fromRGB(196, 124, 220), sparkle = false, shape = "rainbuttermesh" },
 	{ name = "Sparkle Drop",    rarity = "Epic",      color = Color3.fromRGB(140, 226, 198), sparkle = true,  shape = "dropmesh" },
 	{ name = "Giant Banana",    rarity = "Epic",      color = Color3.fromRGB(250, 216, 88),  sparkle = false, shape = "bananamesh",     scale = GIANT },
@@ -86,7 +88,9 @@ Config.Squishies = {
 
 	-- Legendary
 	{ name = "Gold Glitter",    rarity = "Legendary", color = Color3.fromRGB(226, 178, 66),  sparkle = true,  shape = "dumplingmesh" },
-	{ name = "Glow Doughnut",   rarity = "Legendary", color = Color3.fromRGB(132, 244, 120), sparkle = true,  shape = "glowdonutmesh" },
+	-- placeYaw: on a shelf the doughnut's default facing shows its back, so a
+	-- placed one turns half a circle further than the standard about-face.
+	{ name = "Glow Doughnut",   rarity = "Legendary", color = Color3.fromRGB(132, 244, 120), sparkle = true,  shape = "glowdonutmesh", placeYaw = 180 },
 	{ name = "Giant Rainbow Butter", rarity = "Legendary", color = Color3.fromRGB(196, 124, 220), sparkle = false, shape = "rainbuttermesh", scale = GIANT },
 
 	-- Mythical: the big iridescent pearl ones
@@ -458,8 +462,10 @@ Config.Gear = {
 		name = "Speed Coil", blurb = "Run faster, forever" },
 	{ key = "SlapHand", pass = "SlapHand", template = "DefaultSlap", kind = "tool",
 		name = "Slap Hand", blurb = "Send them flying" },
+	-- displayYaw: the pistol model lies side-on to the stand's front, so its
+	-- display copy turns a quarter to face the room.
 	{ key = "Glock", pass = "Glock", template = "Glock-17", kind = "tool",
-		name = "Glock-17", blurb = "Look the part" },
+		name = "Glock-17", blurb = "Look the part", displayYaw = 90 },
 	{ key = "Knight", pass = "Knight", template = "The Knight", kind = "bodyguard",
 		name = "The Knight", blurb = "Your own bodyguard" },
 }

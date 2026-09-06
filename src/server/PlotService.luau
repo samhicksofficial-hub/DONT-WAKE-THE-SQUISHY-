@@ -817,8 +817,12 @@ local function dressGearStand(plot: PlotRecord, slot: SlotRecord)
 				display:ScaleTo(display:GetScale() * scale)
 			end
 			local _, scaled = display:GetBoundingBox()
+			-- displayYaw: some gear models lie side-on (the pistol); the
+			-- catalogue says how far to turn each so it faces the room.
 			display:PivotTo(
-				top.CFrame * CFrame.new(0, top.Size.Y / 2 + GEAR_DISPLAY_LIFT + scaled.Y / 2, 0)
+				top.CFrame
+					* CFrame.new(0, top.Size.Y / 2 + GEAR_DISPLAY_LIFT + scaled.Y / 2, 0)
+					* CFrame.Angles(0, math.rad(tonumber(gear.displayYaw) or 0), 0)
 			)
 		end
 
@@ -1151,11 +1155,15 @@ local function placeSquishy(plot: PlotRecord, slot: SlotRecord, def: any)
 	model.Parent = plot.model
 	local height = SquishyFactory.bodyHeight(def.name)
 	-- Stands on the pedestal's abacus, not the platform itself, and turned to
-	-- face into the room rather than at the back wall.
+	-- face into the room rather than at the back wall. Looked up in the
+	-- catalog rather than read off `def`, because a carried-home squishy
+	-- arrives as a minimal def that never carried the tuning fields.
+	local catalog = (Config.SquishyByName :: any)[def.name] or {}
+	local placeYaw = math.rad(tonumber(catalog.placeYaw) or 0)
 	model:PivotTo(
 		slot.platform.CFrame
 			* CFrame.new(0, slot.platform.Size.Y / 2 + PEDESTAL_HEIGHT + height / 2, 0)
-			* CFrame.Angles(0, math.pi, 0)
+			* CFrame.Angles(0, math.pi + placeYaw, 0)
 	)
 	slot.occupied = true
 	refreshPlacePrompt(slot)

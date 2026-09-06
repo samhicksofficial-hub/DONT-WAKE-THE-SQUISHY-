@@ -79,7 +79,9 @@ function SquishyFactory.create(squishyName: string, variantName: string?): Model
 	local info = Instance.new("BillboardGui")
 	info.Name = "Info"
 	info.Size = UDim2.fromScale(7, 3)
-	info.StudsOffsetWorldSpace = Vector3.new(0, halfY + 2.6, 0)
+	-- Per-def titleLift for the tall ones, whose name would otherwise hang
+	-- high enough to poke through the ceiling of a plot storey.
+	info.StudsOffsetWorldSpace = Vector3.new(0, halfY + (tonumber(def.titleLift) or 2.6), 0)
 	info.AlwaysOnTop = false
 	info.MaxDistance = 90
 	info.Parent = body
