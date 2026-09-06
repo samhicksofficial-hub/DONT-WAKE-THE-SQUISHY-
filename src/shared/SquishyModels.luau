@@ -329,6 +329,9 @@ export type MeshConfig = {
 	-- True when the texture already paints a face on: the billboard face
 	-- stays off for these, or the squishy ends up with two.
 	bakedFace: boolean?,
+	-- True when the baked texture IS the model's art (a wrapper with printed
+	-- text): a variant coat then tints over the print instead of wiping it.
+	keepTexture: boolean?,
 	-- Groups genuinely interchangeable models (the cube colours). When
 	-- `template` isn't in the place, a sibling from the same family stands
 	-- in and gets tinted. Only configs sharing this exact family may lend
@@ -347,10 +350,12 @@ local MESH_SHAPES: { [string]: MeshConfig } = {
 	-- No bakedFace on these, and they aren't dumplings, so they wear no
 	-- face at all — real bananas and butter sticks don't have one.
 	bananamesh = { template = "BananaSquishy", yaw = 180, fallback = "banana" },
-	buttermesh = { template = "ButterSquishy", yaw = 180, fallback = "butter" },
+	-- The "4oz BUTTER" wrapper is the whole joke, so a Gold or Frozen butter
+	-- keeps its label (keepTexture) instead of turning into a blank brick.
+	buttermesh = { template = "ButterSquishy", yaw = 180, keepTexture = true, fallback = "butter" },
 	-- Rainbow Butter has its own tie-dye model, so it needs no tinting.
 	-- Its wrapper text sits on the top face, so it gets stood upright.
-	rainbuttermesh = { template = "RainbowButter", yaw = 0, pitch = 90, fallback = "butter" },
+	rainbuttermesh = { template = "RainbowButter", yaw = 0, pitch = 90, keepTexture = true, fallback = "butter" },
 	glowdonutmesh = { template = "GlowDonut", yaw = 0, fallback = "donut" },
 	cheesemesh = { template = "SquishCheese", yaw = 0, fallback = "cheese" },
 	coconutmesh = { template = "CoconutBall", yaw = 0, fallback = "ball" },
@@ -579,6 +584,10 @@ local function tryBuildMesh(rig: Rig, shape: string, config: MeshConfig, color: 
 		-- for callers (the giant enemies) that must not wear stock textures.
 		if config.tint or borrowed or forceTint then
 			tintMesh(clone, color)
+		end
+		-- Read back by paintVariant, which never sees the shape config.
+		if config.keepTexture then
+			clone:SetAttribute("KeepTexture", true)
 		end
 		-- Configured orientation first, then whatever rotation the piece
 		-- carries, so the assembly turns as a unit and each piece keeps its
@@ -834,11 +843,12 @@ end
 -- is why the face is no longer substituted with a billboard overlay.
 --
 -- A MeshPart's baked TextureID does not respond to Color at all, so for those
--- the texture still has to go before a coat means anything. None of the
--- textured-without-SurfaceAppearance templates carry a face (bananas, butter,
--- cheese are all faceless), so nothing is lost there.
+-- the texture normally has to go before a coat means anything. The exception
+-- is a part stamped KeepTexture (the butter wrappers): its print IS the art,
+-- so the texture is rehoused into a SurfaceAppearance — whose Color multiplies
+-- its ColorMap — and the coat tints THROUGH the label instead of erasing it.
 --
--- Returns true when the part kept art that draws its face.
+-- Returns true when the part kept art that draws it.
 local function paintVariant(part: BasePart, color: Color3): boolean
 	local appearance = part:FindFirstChildOfClass("SurfaceAppearance")
 	if appearance ~= nil then
@@ -854,7 +864,21 @@ local function paintVariant(part: BasePart, color: Color3): boolean
 		appearance:Destroy()
 	end
 	if part:IsA("MeshPart") then
-		(part :: MeshPart).TextureID = ""
+		local meshPart = part :: MeshPart
+		if part:GetAttribute("KeepTexture") == true and meshPart.TextureID ~= "" then
+			-- Where the build cannot set a ColorMap from a script, the pcall
+			-- fails closed: the print stays exactly as imported — untinted,
+			-- but never erased, which is the half that matters.
+			pcall(function()
+				local rehoused = Instance.new("SurfaceAppearance")
+				;(rehoused :: any).ColorMap = meshPart.TextureID
+				;(rehoused :: any).Color = color
+				rehoused.Parent = part
+			end)
+			part.Color = color
+			return true
+		end
+		meshPart.TextureID = ""
 	end
 	part.Color = color
 	return false
