@@ -23,6 +23,7 @@ local SquishyService = {}
 -- Set at Start: progression services that shape carrying and discovery.
 local upgradeService: any = nil
 local discoveryService: any = nil
+local plotService: any = nil
 
 type CarryEntry = { model: Model, def: any, variant: string }
 type PlayerConns = { characterAdded: RBXScriptConnection?, died: RBXScriptConnection? }
@@ -163,6 +164,31 @@ local function isInSafeZone(position: Vector3): boolean
 	return false
 end
 
+-- Vertical reach of the plot test: basements dig below the origin and bought
+-- storeys stack well above it, so the slab of space that counts as "home"
+-- has to cover both without stretching to the sky.
+local PLOT_BELOW_SLACK = 40
+local PLOT_ABOVE_SLACK = 70
+
+-- The player's own plot is a safe zone too: once the carry is home the chase
+-- is over, so the last steps to a shelf are walked at full speed on every
+-- storey. Only their OWN plot — standing in a stranger's base grants nothing.
+local function isOnOwnPlot(player: Player, position: Vector3): boolean
+	if plotService == nil then
+		return false
+	end
+	local ok, origin = pcall(plotService.GetPlotOrigin, player)
+	if not ok or origin == nil then
+		return false
+	end
+	local base = Config.Plot.BaseSize :: Vector2
+	local local_ = (origin :: CFrame):PointToObjectSpace(position)
+	return math.abs(local_.X) <= base.X / 2
+		and math.abs(local_.Z) <= base.Y / 2
+		and local_.Y >= -PLOT_BELOW_SLACK
+		and local_.Y <= PLOT_ABOVE_SLACK
+end
+
 local function startSafeZoneLoop()
 	task.spawn(function()
 		while true do
@@ -171,7 +197,7 @@ local function startSafeZoneLoop()
 				local character = player.Character
 				local root = character and character:FindFirstChild("HumanoidRootPart")
 				if root ~= nil and root:IsA("BasePart") then
-					local safe = isInSafeZone(root.Position)
+					local safe = isInSafeZone(root.Position) or isOnOwnPlot(player, root.Position)
 					-- Only touch WalkSpeed on a change, so this never fights the
 					-- other things that write speed every frame.
 					if (player:GetAttribute("InSafeZone") == true) ~= safe then
@@ -521,6 +547,7 @@ function SquishyService.Start(services: any, map: any)
 	mapRef = map
 	upgradeService = services.UpgradeService
 	discoveryService = services.DiscoveryService
+	plotService = services.PlotService
 
 	-- The client's Drop button, and any speed change from upgrades or a wheel
 	-- boost, both land back here — this service owns WalkSpeed.
