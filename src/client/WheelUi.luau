@@ -129,6 +129,27 @@ local function formatCountdown(seconds: number): string
 	return ("Next in %d:%02d"):format(math.floor(total / 60), total % 60)
 end
 
+-- What the toast says on a win. A reward that runs out says how long it lasts:
+-- the speed wedge is a loan, not the permanent speed pass, and with no timer
+-- anywhere on screen the toast is the player's only way to tell the difference.
+local function winMessage(reward: any): string
+	if reward == nil then
+		return "You won a prize!"
+	end
+	local duration = tonumber(reward.duration)
+	if duration == nil or duration <= 0 then
+		return ("You won %s!"):format(reward.label)
+	end
+	local spell
+	if duration >= 60 and duration % 60 == 0 then
+		local minutes = duration // 60
+		spell = ("%d minute%s"):format(minutes, if minutes == 1 then "" else "s")
+	else
+		spell = ("%d seconds"):format(math.round(duration))
+	end
+	return ("You won %s for %s!"):format(reward.label, spell)
+end
+
 -- Paints the pizza behind the pack's labels. `wheel` is the SpinWheel image, and
 -- the slices go in as one more of its children so they turn with it on a spin.
 local function buildSlices(wheel: any, rewards: { any }, wedgeCount: number)
@@ -456,7 +477,7 @@ function WheelUi.Start()
 		end
 
 		local reward = rewards[index]
-		UiRefs.notify(if reward then ("You won %s!"):format(reward.label) else "You won a prize!", 4)
+		UiRefs.notify(winMessage(reward), 4)
 		refresh()
 	end
 

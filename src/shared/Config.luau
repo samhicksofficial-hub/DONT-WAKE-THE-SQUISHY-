@@ -383,11 +383,22 @@ Config.Wheel = {
 	StartingSpins = 1,
 	-- Six wedges, matching the pack's SpinWheel.Pattern slots 1..6.
 	-- kind: "cash" (amount), "squishy" (rarity), "speed" (mult + duration)
+	--
+	-- The speed wedge is a LOAN, never a permanent upgrade. `duration` is the
+	-- seconds it lasts; `gear` names a Config.Gear entry whose tool is handed
+	-- over for the same stretch, so the win arrives as a Speed Coil you can
+	-- see in your backpack rather than a number you cannot. WheelService takes
+	-- both back when the time is up — permanent speed is a game pass, and it
+	-- has to stay worth buying.
+	--
+	-- The coil is a PROP. The imported model's only script is an empty Synapse
+	-- decompiler stub, so holding it does nothing by itself; the speed comes
+	-- from the SpeedBoost attribute that SquishyService folds into WalkSpeed.
 	Rewards = {
 		{ kind = "cash",    label = "$500",     amount = 500,   weight = 30 },
 		{ kind = "squishy", label = "Rare",     rarity = "Rare", weight = 22 },
 		{ kind = "cash",    label = "$5K",      amount = 5000,  weight = 20 },
-		{ kind = "speed",   label = "2x Speed", mult = 2, duration = 60, weight = 15 },
+		{ kind = "speed",   label = "2x Speed", mult = 2, duration = 300, gear = "SpeedCoil", weight = 15 },
 		{ kind = "squishy", label = "Epic",     rarity = "Epic", weight = 10 },
 		{ kind = "squishy", label = "Legendary", rarity = "Legendary", weight = 3 },
 	},

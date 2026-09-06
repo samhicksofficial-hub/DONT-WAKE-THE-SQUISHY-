@@ -10,6 +10,11 @@
 --     multiplier applies), a squishy delivered to the player's plot through
 --     PlotService, or a timed `SpeedBoost` attribute that SquishyService reads
 --     when it computes WalkSpeed (this service never touches WalkSpeed).
+--   * A speed win is a LOAN with a prop. Alongside the attribute it hands over
+--     a real Speed Coil from GearService's templates, and takes it back when
+--     the time runs out. The coil only looks the part — the imported model's
+--     script is an empty decompiler stub — so the attribute is what actually
+--     moves the player, and the loan never touches a coil bought with the pass.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -80,19 +85,102 @@ local function addMoney(player: Player, amount: number)
 	end
 end
 
--- Sets the SpeedBoost attribute for `duration` seconds. SquishyService folds
--- this into WalkSpeed; nothing here writes WalkSpeed itself.
-local function applySpeedBoost(player: Player, mult: number, duration: number)
+-- Stamped on a lent tool so the timer only ever takes back what the wheel
+-- handed out, and never a coil the player bought with the game pass.
+local LOAN_ATTRIBUTE = "WheelLoan"
+
+local function gearByKey(key: string): any
+	for _, gear in Config.Gear :: { any } do
+		if gear.key == key then
+			return gear
+		end
+	end
+	return nil
+end
+
+-- True while the player is already holding a lent copy of `toolName`, wherever
+-- they have put it. A second speed win extends the loan rather than handing
+-- over a second identical coil.
+local function holdsLoan(player: Player, toolName: string): boolean
+	for _, place in { player:FindFirstChildOfClass("Backpack"), player:FindFirstChildOfClass("StarterGear"), player.Character } do
+		if place ~= nil then
+			for _, child in place:GetChildren() do
+				if child:IsA("Tool") and child.Name == toolName and child:GetAttribute(LOAN_ATTRIBUTE) == true then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- Puts a copy of a Config.Gear tool in the player's hands for the length of the
+-- loan. StarterGear as well as Backpack, so dying does not end the loan early.
+local function lendTool(player: Player, gearKey: string)
+	local gearService = servicesRef and servicesRef.GearService
+	local gear = gearByKey(gearKey)
+	if gearService == nil or gear == nil then
+		return
+	end
+	-- Bought and paid for: they already carry it for keeps, and a loan timer
+	-- must never confiscate a pass item.
+	if player:GetAttribute("Owns" .. tostring(gear.key)) == true then
+		return
+	end
+	local ok, template = pcall(gearService.Template, gear)
+	if not ok or template == nil or not template:IsA("Tool") then
+		return
+	end
+	if holdsLoan(player, template.Name) then
+		return
+	end
+	for _, container in { player:FindFirstChildOfClass("Backpack"), player:FindFirstChildOfClass("StarterGear") } do
+		if container ~= nil then
+			local clone = template:Clone()
+			clone:SetAttribute(LOAN_ATTRIBUTE, true)
+			clone.Parent = container
+		end
+	end
+end
+
+-- Takes back every copy the wheel lent, including one currently equipped.
+local function recallTools(player: Player)
+	for _, place in { player:FindFirstChildOfClass("Backpack"), player:FindFirstChildOfClass("StarterGear"), player.Character } do
+		if place ~= nil then
+			for _, child in place:GetChildren() do
+				if child:IsA("Tool") and child:GetAttribute(LOAN_ATTRIBUTE) == true then
+					child:Destroy()
+				end
+			end
+		end
+	end
+end
+
+-- Lends the speed for `reward.duration` seconds: the multiplier SquishyService
+-- folds into WalkSpeed, plus — when the reward names one — the gear that stands
+-- for it. Nothing here writes WalkSpeed itself, and the coil is scenery: its
+-- imported script is an empty stub, so the attribute is what actually moves the
+-- player. Both are handed over together and taken back together.
+local function lendSpeed(player: Player, reward: any)
+	local duration = tonumber(reward.duration) or 0
+	if duration <= 0 then
+		return
+	end
 	local expiry = os.clock() + duration
 	boostExpiry[player] = expiry
-	player:SetAttribute("SpeedBoost", mult)
+	player:SetAttribute("SpeedBoost", reward.mult)
+	if typeof(reward.gear) == "string" then
+		pcall(lendTool, player, reward.gear)
+	end
 	task.delay(duration, function()
-		-- Only the timer holding the current stamp may clear the boost, so a
+		-- Only the timer holding the current stamp may end the loan, so a
 		-- second win's boost is never cut short by the first win's timer.
-		if boostExpiry[player] == expiry then
-			boostExpiry[player] = nil
-			player:SetAttribute("SpeedBoost", nil)
+		if boostExpiry[player] ~= expiry then
+			return
 		end
+		boostExpiry[player] = nil
+		player:SetAttribute("SpeedBoost", nil)
+		pcall(recallTools, player)
 	end)
 end
 
@@ -125,7 +213,7 @@ local function grantReward(player: Player, reward: any)
 	elseif reward.kind == "squishy" then
 		grantSquishy(player, reward.rarity)
 	elseif reward.kind == "speed" then
-		applySpeedBoost(player, reward.mult, reward.duration)
+		lendSpeed(player, reward)
 	end
 end
 
