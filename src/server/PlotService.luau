@@ -2011,6 +2011,16 @@ function PlotService.GetPlotOrigin(player: Player): CFrame?
 	return nil
 end
 
+-- Which of the map's plot spots this player holds, or nil before they claim
+-- one. DefenseService keys its per-plot collision groups off this.
+function PlotService.GetPlotSpotIndex(player: Player): number?
+	local plot = plots[player]
+	if plot ~= nil then
+		return plot.spotIndex
+	end
+	return nil
+end
+
 -- Where SpawnService drops this player's character: the base's SpawnPoint part,
 -- facing out toward the field. Nil while the player has no plot yet.
 function PlotService.GetSpawnCFrame(player: Player): CFrame?

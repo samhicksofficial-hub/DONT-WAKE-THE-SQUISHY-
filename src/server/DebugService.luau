@@ -316,6 +316,24 @@ commands.discoverAll = function(player, _payload)
 	return true, ("index filled in (%d new)"):format(added)
 end
 
+-- Grants a defence without a receipt, so both can be play-tested while their
+-- product ids are still parked at 0. payload.what: "slap" or "lock".
+commands.defend = function(player, payload)
+	local defense = service("DefenseService")
+	if defense == nil then
+		return false, "no DefenseService"
+	end
+	local what = tostring(payload.what)
+	if what == "slap" then
+		local ok = defense.GrantSlapProtection(player)
+		return ok == true, if ok == true then "slap protection up" else "grant failed"
+	elseif what == "lock" then
+		local ok = defense.GrantBaseLock(player)
+		return ok == true, if ok == true then "base locked" else "no plot to lock yet"
+	end
+	return false, "what should be 'slap' or 'lock'"
+end
+
 commands.daily = function(player, _payload)
 	local daily = service("DailyService")
 	if daily == nil then

@@ -432,6 +432,20 @@ Config.Products = {
 	-- Pay Robux to take a squishy off another player's plot. Stealing stays
 	-- switched off until this id exists.
 	Steal = 0,
+	-- The two defence pads at a plot's front door (DefenseService). Parked at
+	-- 0 like everything else: the pads say "Coming soon" and prompt nothing.
+	SlapProtection = 0,
+	BaseLock = 0,
+}
+
+-- What the defence pads sell (DefenseService). Slap Protection guards against
+-- OTHER PLAYERS' slap hands only — the giants ignore it, because a defence you
+-- can buy against the game's core threat would sell the game out from under
+-- itself. Lock Base drops a laser wall across the front opening that only the
+-- owner can walk through.
+Config.Defense = {
+	SlapProtectionMinutes = 15,
+	BaseLockMinutes = 15,
 }
 
 -- Game passes: the PERMANENT purchases. Same 0-means-parked rule.

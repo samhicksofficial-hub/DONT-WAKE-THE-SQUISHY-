@@ -38,6 +38,7 @@ services.DailyService = require(script.DailyService) :: any
 services.ShopService = require(script.ShopService) :: any
 services.GearService = require(script.GearService) :: any
 services.StealService = require(script.StealService) :: any
+services.DefenseService = require(script.DefenseService) :: any
 services.PortalService = require(script.PortalService) :: any
 services.RagdollService = require(script.RagdollService) :: any
 services.SaveService = require(script.SaveService) :: any
@@ -73,6 +74,9 @@ for _, name in {
 	"GearService",
 	-- Last: it walks the finished plots to attach its prompts.
 	"StealService",
+	-- After ShopService (it registers its two products into the receipt
+	-- router) and after PlotService (its pads stand where the plots are).
+	"DefenseService",
 	-- Needs the map root resolved and the saved props in place.
 	"PortalService",
 	-- LAST of the gameplay services: it reads a profile back through every one
