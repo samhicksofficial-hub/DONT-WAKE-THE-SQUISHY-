@@ -19,6 +19,11 @@ local COLOR_TIME = 0.2
 
 local WELCOME_TEXT = "Sneak into the field and hold E to grab a squishy"
 local WELCOME_SECONDS = 8
+-- How long the carry line stays up. It used to sit on screen for the whole
+-- trip home, which turned a hint into furniture; now it flashes up when the
+-- carry starts (and when the slow-down changes, e.g. crossing into a safe
+-- zone) and gets out of the way.
+local CARRY_SECONDS = 4
 
 local PULSE_INFO = TweenInfo.new(PULSE_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local COLOR_INFO = TweenInfo.new(COLOR_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -117,13 +122,24 @@ function AlertUi.Start()
 		end
 	end
 
+	-- Each showing arms its own expiry; the token keeps an old timer from
+	-- wiping a line a newer pickup just put up.
+	local carryToken = 0
 	local function updateCarry()
+		carryToken += 1
 		local carrying = player:GetAttribute("Carrying")
 		if typeof(carrying) == "string" and (carrying :: string) ~= "" then
 			local rawMult = player:GetAttribute("CarrySpeedMult")
 			local mult = if typeof(rawMult) == "number" then rawMult :: number else 1
 			local slower = math.floor((1 - mult) * 100 + 0.5)
 			carryText = ("Carrying %s — %d%% slower. Get to your plot!"):format(carrying :: string, slower)
+			local mine = carryToken
+			task.delay(CARRY_SECONDS, function()
+				if carryToken == mine and carryText ~= nil then
+					carryText = nil
+					refreshHint()
+				end
+			end)
 		else
 			carryText = nil
 		end
