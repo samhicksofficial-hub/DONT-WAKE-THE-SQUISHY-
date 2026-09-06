@@ -391,6 +391,9 @@ Config.Wheel = {
 	-- both back when the time is up — permanent speed is a game pass, and it
 	-- has to stay worth buying.
 	--
+	-- `mult` applies only while that coil is actually HELD, so the reward plays
+	-- like a coil rather than a timer: put it away and you walk.
+	--
 	-- The coil is a PROP. The imported model's only script is an empty Synapse
 	-- decompiler stub, so holding it does nothing by itself; the speed comes
 	-- from the SpeedBoost attribute that SquishyService folds into WalkSpeed.
