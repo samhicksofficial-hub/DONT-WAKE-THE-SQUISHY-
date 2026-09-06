@@ -178,11 +178,9 @@ local function attributeName(gear: any): string
 	return "Owns" .. tostring(gear.key)
 end
 
--- Hands the item over. Tools go into the Backpack AND StarterGear so they
--- survive a respawn; a bodyguard is left to its own scripts, which read the
--- attribute this sets.
-local function grant(player: Player, gear: any)
-	player:SetAttribute(attributeName(gear), true)
+-- Puts a tool-kind gear's Tool in the player's kit: Backpack AND StarterGear,
+-- so it survives a respawn. Deduplicated by name, so handing twice is safe.
+local function handTool(player: Player, gear: any)
 	if gear.kind ~= "tool" then
 		return
 	end
@@ -197,6 +195,33 @@ local function grant(player: Player, gear: any)
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	if backpack ~= nil and backpack:FindFirstChild(template.Name) == nil then
 		template:Clone().Parent = backpack
+	end
+end
+
+-- Hands the item over. Tools go into the player's kit; a bodyguard is left to
+-- its own scripts, which read the attribute this sets.
+local function grant(player: Player, gear: any)
+	player:SetAttribute(attributeName(gear), true)
+	handTool(player, gear)
+end
+
+-- Gear EVERYONE starts with, pass or no pass. The slap hand is the game's
+-- handshake — without one a player can neither defend a carry nor join the
+-- scrap at all — so it is kit, not merchandise. (This makes the SlapHand pass
+-- redundant: buying it grants nothing the player does not already hold.)
+local DEFAULT_GEAR: { string } = { "SlapHand" }
+
+local function applyDefaults(player: Player)
+	-- The Backpack only exists once a character has spawned; wait for it so a
+	-- slow first spawn is not silently handed nothing. StarterGear catches the
+	-- respawns after that.
+	player:WaitForChild("Backpack", 30)
+	for _, key in DEFAULT_GEAR do
+		for _, gear in Config.Gear :: { any } do
+			if gear.key == key then
+				pcall(handTool, player, gear)
+			end
+		end
 	end
 end
 
@@ -246,9 +271,11 @@ end
 
 function GearService.Start(_services: any, _map: any)
 	Players.PlayerAdded:Connect(function(player)
+		task.spawn(applyDefaults, player)
 		task.spawn(applyOwned, player)
 	end)
 	for _, player in Players:GetPlayers() do
+		task.spawn(applyDefaults, player)
 		task.spawn(applyOwned, player)
 	end
 
