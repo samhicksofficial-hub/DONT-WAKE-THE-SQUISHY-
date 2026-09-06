@@ -21,6 +21,12 @@
 -- single ProcessReceipt. While the ids are 0 the pads stand there saying
 -- "Coming soon" and prompt nothing, the same as the gear stands.
 --
+-- The pads stand at EVERY plot spot, claimed or not, exactly like the
+-- reference game's — only the spot's current owner gets a prompt out of one.
+-- They are also buildable in Edit mode (tools/build scripts call EnsurePads
+-- with the marker CFrames) so they show while editing; the server rebuilds
+-- them identically at startup either way.
+--
 -- Everything lives in workspace.PlotDefense rather than in the plot model:
 -- buying a floor rebuilds the plot's children, and the pads must not die with
 -- them.
@@ -61,7 +67,6 @@ local servicesRef: any = nil
 -- Per-player defence state. Timers carry a stamp so a rebuy extends rather
 -- than being cut short by the first purchase's timer.
 type State = {
-	pads: Model?,
 	wall: Model?,
 	lockStamp: number,
 	protectStamp: number,
@@ -75,7 +80,7 @@ local priceCache: { [number]: number } = {}
 local function stateFor(player: Player): State
 	local state = states[player]
 	if state == nil then
-		state = { pads = nil, wall = nil, lockStamp = 0, protectStamp = 0, lastTouch = 0 }
+		state = { wall = nil, lockStamp = 0, protectStamp = 0, lastTouch = 0 }
 		states[player] = state
 	end
 	return state
@@ -261,28 +266,45 @@ local function buildPad(
 	end)
 end
 
-local function buildPads(player: Player, origin: CFrame)
-	local state = stateFor(player)
-	if state.pads ~= nil and state.pads.Parent ~= nil then
-		return
+-- Stands the pair of pads at one plot spot, wiping any pair already there.
+-- Rebuilt rather than adopted: cheaper to reason about, identical to look at,
+-- and a marker nudged in the editor is followed automatically. Callable from
+-- Edit mode with a marker's CFrame, which is how the pads get into the saved
+-- place where they can be SEEN while editing.
+function DefenseService.EnsurePads(spotIndex: number, origin: CFrame)
+	local parent = folder()
+	local name = ("Pads_Spot%d"):format(spotIndex)
+	local previous = parent:FindFirstChild(name)
+	if previous ~= nil then
+		previous:Destroy()
 	end
 	local pads = Instance.new("Model")
-	pads.Name = ("DefensePads_%d"):format(player.UserId)
-	pads.Parent = folder()
-	state.pads = pads
+	pads.Name = name
+	pads.Parent = parent
 
+	-- Only the spot's CURRENT owner gets a prompt: the pad asks PlotService
+	-- which spot the toucher holds and matches it against its own.
 	local function prompt(productId: number)
 		return function(toucher: Player)
-			if toucher ~= player or productId == 0 then
+			if productId == 0 then
 				return
 			end
+			local plots = plotService()
+			if plots == nil then
+				return
+			end
+			local ok, spot = pcall(plots.GetPlotSpotIndex, toucher)
+			if not ok or spot ~= spotIndex then
+				return -- someone else's front door
+			end
+			local state = stateFor(toucher)
 			local now = os.clock()
 			if now - state.lastTouch < TOUCH_DEBOUNCE then
 				return
 			end
 			state.lastTouch = now
 			pcall(function()
-				MarketplaceService:PromptProductPurchase(player, productId)
+				MarketplaceService:PromptProductPurchase(toucher, productId)
 			end)
 		end
 	end
@@ -433,9 +455,21 @@ end
 
 -- ------------------------------------------------------------------ start --
 
-function DefenseService.Start(services: any, _map: any)
+function DefenseService.Start(services: any, map: any)
 	servicesRef = services
 	registerGroups()
+
+	-- A pair of pads at every spot, claimed or not — freshly rebuilt, so any
+	-- copies saved into the place for editing are replaced with wired ones.
+	local spots = map ~= nil and map.plotSpots or nil
+	if typeof(spots) == "table" then
+		for spotIndex, origin in spots :: { CFrame } do
+			local ok, err = pcall(DefenseService.EnsurePads, spotIndex, origin)
+			if not ok then
+				warn(("[DefenseService] pads for spot %d failed: %s"):format(spotIndex, tostring(err)))
+			end
+		end
+	end
 
 	-- Receipts route through the game's one ProcessReceipt.
 	local shop = services.ShopService
@@ -454,29 +488,19 @@ function DefenseService.Start(services: any, _map: any)
 	Players.PlayerRemoving:Connect(function(player)
 		local state = states[player]
 		states[player] = nil
-		if state ~= nil then
-			if state.pads ~= nil then
-				state.pads:Destroy()
-			end
-			if state.wall ~= nil then
-				state.wall:Destroy()
-			end
+		if state ~= nil and state.wall ~= nil then
+			state.wall:Destroy()
 		end
 	end)
 
-	-- The reconcile loop: pads for fresh plots, the owner's character kept in
-	-- its collision group (a respawn hands out factory-default parts), and a
-	-- shield restored to a character that respawned mid-protection.
+	-- The reconcile loop: the owner's character kept in its collision group
+	-- (a respawn hands out factory-default parts), and a shield restored to a
+	-- character that respawned mid-protection.
 	task.spawn(function()
 		while true do
 			task.wait(POLL_SECONDS)
 			for _, player in Players:GetPlayers() do
 				local ok, err = pcall(function()
-					local origin = originFor(player)
-					if origin == nil then
-						return
-					end
-					buildPads(player, origin)
 					local spotIndex = spotIndexFor(player)
 					if spotIndex ~= nil then
 						assignCharacterGroup(player, spotIndex)
