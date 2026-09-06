@@ -196,11 +196,13 @@ commands.place = function(player, payload)
 	local wanted = math.clamp(math.floor(tonumber(payload.count) or 1), 1, MAX_BULK_PLACE)
 	local variant = pickVariant(payload)
 	local placed = 0
+	local matched = false
 	for _ = 1, wanted do
 		local def = pickDef(payload)
 		if def == nil then
 			break
 		end
+		matched = true
 		-- A copy, because TryPlaceSquishy reads `variant` off the def it is given
 		-- and the catalog entry must stay clean.
 		local defCopy = table.clone(def)
@@ -210,6 +212,9 @@ commands.place = function(player, payload)
 			break
 		end
 		placed += 1
+	end
+	if not matched then
+		return false, "no squishy matched: pass a rarity or a squishy name"
 	end
 	if placed == 0 then
 		return false, "no free unlocked slot"
