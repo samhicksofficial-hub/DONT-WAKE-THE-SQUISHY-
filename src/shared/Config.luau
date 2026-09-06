@@ -448,6 +448,16 @@ Config.Defense = {
 	BaseLockMinutes = 15,
 }
 
+-- The plot keeps earning while its owner is away. SaveService prices it from
+-- the plot's $/s at the moment of the last save, and the while-you-were-away
+-- popup hands it over on the next join — nothing is credited silently.
+Config.Offline = {
+	Cap = 500e6,
+	-- Shorter absences pay nothing, so a crash-and-rejoin does not open a
+	-- ceremony over pocket change.
+	MinimumAwaySeconds = 60,
+}
+
 -- Game passes: the PERMANENT purchases. Same 0-means-parked rule.
 Config.Passes = {
 	VIP = 0,            -- permanent income multiplier (Shop.VipIncomeMult)

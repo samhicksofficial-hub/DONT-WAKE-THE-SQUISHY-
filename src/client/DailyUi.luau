@@ -310,6 +310,22 @@ function DailyUi.Start()
 	-- point of a daily reward is that you see it.
 	task.spawn(function()
 		task.wait(2)
+		-- The while-you-were-away popup goes first. OfflineChecked is
+		-- SaveService's word that the verdict is in; wait for it (or give up
+		-- after a while — a dead DataStore never renders one), then for the
+		-- popup itself to be collected. No deadline on that second wait: while
+		-- the earnings panel is up, it IS the thing on screen.
+		local verdictBy = os.clock() + 15
+		while os.clock() < verdictBy and player:GetAttribute("OfflineChecked") ~= true do
+			task.wait(0.25)
+		end
+		while true do
+			local pending = player:GetAttribute("OfflinePending")
+			if typeof(pending) ~= "number" or (pending :: number) <= 0 then
+				break
+			end
+			task.wait(0.25)
+		end
 		if player:GetAttribute("DailyClaimable") == true then
 			show()
 			panel.Size = PANEL_SIZE_SMALL

@@ -2011,6 +2011,24 @@ function PlotService.GetPlotOrigin(player: Player): CFrame?
 	return nil
 end
 
+-- The plot's raw income in $/s: every placed squishy's current rate summed,
+-- before the rebirth/boost multipliers (EconomyService applies those at the
+-- point of payment). SaveService writes this into the profile so a return
+-- visit can pay what the shelf earned while its owner was away.
+function PlotService.GetIncomeRate(player: Player): number
+	local plot = plots[player]
+	if plot == nil then
+		return 0
+	end
+	local total = 0
+	for _, slot in plot.slots do
+		if slot.occupied and not slot.isItemSlot then
+			total += tonumber(slot.income) or 0
+		end
+	end
+	return total
+end
+
 -- Which of the map's plot spots this player holds, or nil before they claim
 -- one. DefenseService keys its per-plot collision groups off this.
 function PlotService.GetPlotSpotIndex(player: Player): number?

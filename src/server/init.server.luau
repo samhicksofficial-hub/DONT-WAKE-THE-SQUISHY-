@@ -15,7 +15,7 @@ for _, name in { "Popup", "Drop", "BuyUpgrade", "DoRebirth", "Discovered" } do
 	event.Name = name
 	event.Parent = remotes
 end
-for _, name in { "Spin", "DailyClaim" } do
+for _, name in { "Spin", "DailyClaim", "OfflineClaim" } do
 	local fn = Instance.new("RemoteFunction")
 	fn.Name = name
 	fn.Parent = remotes

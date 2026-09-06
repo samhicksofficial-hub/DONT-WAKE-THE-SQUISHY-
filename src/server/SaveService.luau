@@ -46,6 +46,10 @@ local loaded: { [Player]: boolean } = {}
 -- player -> the profile as read, so a save can fall back to it for anything
 -- the session never managed to apply.
 local profiles: { [Player]: any } = {}
+-- player -> money the plot earned while they were away, held for the popup's
+-- Collect button rather than credited silently. Never written to the profile:
+-- once collected the balance simply carries it.
+local offlinePending: { [Player]: number } = {}
 
 local function keyFor(player: Player): string
 	return ("p_%d"):format(player.UserId)
@@ -80,16 +84,31 @@ local function gather(player: Player): any
 	-- The plot falls back to the profile as loaded. A player who left before
 	-- their plot finished building must not have it saved as empty.
 	local plot = previous.plot
+	local plotIsFresh = false
 	if plots ~= nil then
 		local ok, exported = pcall(plots.ExportPlot, player)
 		if ok and exported ~= nil then
 			plot = exported
+			plotIsFresh = true
+		end
+	end
+
+	-- The plot's raw $/s right now, so the next visit can pay out what the
+	-- shelf earned in between (see Config.Offline). Same fallback rule as the
+	-- plot itself: a fresh rate is only trusted when the plot it was read from
+	-- actually exists, or a half-built session would zero a real rate.
+	local incomeRate = tonumber(previous.incomeRate) or 0
+	if plotIsFresh and plots ~= nil then
+		local rateOk, rate = pcall(plots.GetIncomeRate, player)
+		if rateOk and typeof(rate) == "number" then
+			incomeRate = rate
 		end
 	end
 
 	return {
 		version = 1,
 		money = if economy ~= nil then economy.GetMoney(player) else numberAttribute(player, "Money", 0),
+		incomeRate = incomeRate,
 		rebirths = numberAttribute(player, "Rebirths", 0),
 		spins = numberAttribute(player, "Spins", 0),
 		boostUntil = numberAttribute(player, "BoostUntil", 0),
@@ -192,6 +211,34 @@ local function readProfile(player: Player): (boolean, any)
 	return false, nil
 end
 
+-- What the plot earned while its owner was away, priced from the profile's
+-- $/s and held for the popup's Collect button. OfflineChecked is the client's
+-- signal that the verdict is in (pending or not), so DailyUi knows when it may
+-- take the stage.
+local function computeOffline(player: Player, profile: any)
+	local offline = Config.Offline :: any
+	local away = os.time() - (tonumber(profile.savedAt) or os.time())
+	local rate = tonumber(profile.incomeRate) or 0
+	if away < (tonumber(offline.MinimumAwaySeconds) or 60) or rate <= 0 then
+		return
+	end
+	-- The figure shown is the figure paid, multipliers already in, so the
+	-- popup can never contradict the balance afterwards.
+	local preview = rate * away
+	local economy = service("EconomyService")
+	if economy ~= nil then
+		local ok, previewed = pcall(economy.PreviewIncome, player, preview)
+		if ok and typeof(previewed) == "number" then
+			preview = previewed
+		end
+	end
+	local pending = math.min(math.floor(preview), tonumber(offline.Cap) or 500e6)
+	if pending >= 1 then
+		offlinePending[player] = pending
+		player:SetAttribute("OfflinePending", pending)
+	end
+end
+
 local function loadPlayer(player: Player)
 	local ok, profile = readProfile(player)
 	if not ok then
@@ -199,10 +246,12 @@ local function loadPlayer(player: Player)
 		-- transient DataStore failure costs them one session's progress rather
 		-- than everything they have ever earned.
 		warn(("[SaveService] %s is playing unsaved this session (their profile is untouched)"):format(player.Name))
+		player:SetAttribute("OfflineChecked", true)
 		return
 	end
 	loaded[player] = true
 	if typeof(profile) ~= "table" then
+		player:SetAttribute("OfflineChecked", true)
 		return -- genuinely new player; nothing to apply
 	end
 	profiles[player] = profile
@@ -210,6 +259,9 @@ local function loadPlayer(player: Player)
 	if not applied then
 		warn(("[SaveService] scalar restore failed for %s: %s"):format(player.Name, tostring(err)))
 	end
+	-- After the scalars: the multiplier preview reads the restored rebirths.
+	pcall(computeOffline, player, profile)
+	player:SetAttribute("OfflineChecked", true)
 	task.spawn(function()
 		local plotOk, plotErr = pcall(applyPlot, player, profile)
 		if not plotOk then
@@ -275,10 +327,31 @@ function SaveService.Start(services: any, _map: any)
 		task.spawn(loadPlayer, player)
 	end
 
+	-- The while-you-were-away popup's Collect button. Credits exactly the
+	-- figure that was shown — the multipliers were applied when it was priced,
+	-- so this is a straight addition, not another AddMoney.
+	local claim = ReplicatedStorage:WaitForChild("Remotes"):FindFirstChild("OfflineClaim")
+	if claim ~= nil and claim:IsA("RemoteFunction") then
+		claim.OnServerInvoke = function(player: Player)
+			local pending = offlinePending[player]
+			offlinePending[player] = nil
+			player:SetAttribute("OfflinePending", nil)
+			if pending == nil then
+				return nil
+			end
+			local economy = service("EconomyService")
+			if economy ~= nil then
+				economy.SetMoney(player, economy.GetMoney(player) + pending)
+			end
+			return pending
+		end
+	end
+
 	Players.PlayerRemoving:Connect(function(player)
 		savePlayer(player, "leaving")
 		loaded[player] = nil
 		profiles[player] = nil
+		offlinePending[player] = nil
 	end)
 
 	-- Autosave, staggered per player rather than all at once, so a full server
