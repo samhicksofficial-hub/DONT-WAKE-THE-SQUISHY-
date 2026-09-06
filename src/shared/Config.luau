@@ -379,7 +379,12 @@ Config.Rebirth = {
 }
 
 Config.Wheel = {
-	SpinCooldown = 300,   -- seconds between free spins
+	-- Seconds of play between free spins. The timer only runs while the player
+	-- is actually in a server, and it starts over on each visit (NextSpinAt is
+	-- not saved), so this is half an hour of PLAY, not of wall clock. At the
+	-- old 300 a session threw spins at the player faster than the wheel could
+	-- stay interesting.
+	SpinCooldown = 1800,
 	StartingSpins = 1,
 	-- Six wedges, matching the pack's SpinWheel.Pattern slots 1..6.
 	-- kind: "cash" (amount), "squishy" (rarity), "speed" (mult + duration)
