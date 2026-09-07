@@ -229,6 +229,18 @@ function ShopService.Start(services: any, _map: any)
 		grantSpins(buyer, 9)
 		return true
 	end)
+	-- The two server-wide boosts (BoostUi's side buttons). Whoever pays, the
+	-- whole server gets the effect — that is the pitch.
+	ShopService.RegisterProductHandler(tonumber(products.SleepAll) or 0, function(_receipt, _buyer)
+		local boosts = Config.Boosts :: any
+		servicesRef.EnemyService.SleepAll(tonumber(boosts.SleepSeconds) or 60)
+		return true
+	end)
+	ShopService.RegisterProductHandler(tonumber(products.ServerLuck) or 0, function(_receipt, _buyer)
+		local boosts = Config.Boosts :: any
+		servicesRef.SquishyService.LuckBoost(tonumber(boosts.LuckMinutes) or 15)
+		return true
+	end)
 
 	-- The one and only assignment of the callback in this codebase (the
 	-- donation board model in the place also assigns it; whichever runs last

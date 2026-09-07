@@ -319,6 +319,47 @@ local function onPickup(player: Player, model: Model)
 	end
 end
 
+-- ------------------------------------------------------------ server luck --
+-- The paid server-wide luck boost (Products.ServerLuck). While it runs, every
+-- spawn-roll weight is tempered to weight^(1/LuckPower), which narrows the
+-- gap between Common and Mythical rather than flattening it, and the variant
+-- roll gets the same treatment so the coats come up rarer-flavoured too. The
+-- expiry lives on ReplicatedStorage where every client's BoostUi counts it
+-- down.
+
+local function luckPower(): number
+	local luckUntil = tonumber(ReplicatedStorage:GetAttribute("ServerLuckUntil")) or 0
+	if os.time() >= luckUntil then
+		return 1
+	end
+	return math.max(1, tonumber((Config.Boosts :: any).LuckPower) or 1)
+end
+
+-- Weighted pick with the current luck applied. The picked ORIGINAL entry comes
+-- back; the tempering only ever lives in a throwaway copy.
+local function luckyRoll(entries: { any }): any
+	local power = luckPower()
+	if power <= 1 then
+		return Util.weightedRandom(entries, rng)
+	end
+	local tempered = {}
+	for _, entry in entries do
+		table.insert(tempered, { entry = entry, weight = (tonumber(entry.weight) or 0) ^ (1 / power) })
+	end
+	local picked = Util.weightedRandom(tempered, rng)
+	return if picked ~= nil then picked.entry else nil
+end
+
+-- A rebuy extends from the current expiry, the way every timed purchase here
+-- stacks.
+function SquishyService.LuckBoost(minutes: number)
+	local current = tonumber(ReplicatedStorage:GetAttribute("ServerLuckUntil")) or 0
+	ReplicatedStorage:SetAttribute(
+		"ServerLuckUntil",
+		math.max(os.time(), current) + math.max(1, math.floor(minutes)) * 60
+	)
+end
+
 -- One spawn attempt: respects the fresh cap and spawn point occupancy.
 -- Spawns one field squishy. `forcedRarity` skips the weighted roll (the timed
 -- guaranteed-rarity events use it) and `ignoreCap` lets an event land even when
@@ -368,7 +409,7 @@ local function trySpawn(forcedRarity: string?, ignoreCap: boolean?, forcedVarian
 
 	local rarity = if forcedRarity ~= nil
 		then Config.RarityByName[forcedRarity]
-		else Util.weightedRandom(Config.Rarities, rng) :: any
+		else luckyRoll(Config.Rarities) :: any
 	if rarity == nil then
 		return nil
 	end
@@ -387,7 +428,7 @@ local function trySpawn(forcedRarity: string?, ignoreCap: boolean?, forcedVarian
 	-- dev panel puts a chosen coat in the field to look at.
 	local variant = if forcedVariant ~= nil and Config.VariantByName[forcedVariant] ~= nil
 		then Config.VariantByName[forcedVariant] :: any
-		else Util.weightedRandom(Config.Variants, rng) :: any
+		else luckyRoll(Config.Variants) :: any
 
 	local model = SquishyFactory.create(def.name, variant.name)
 	local point = spawns[spawnIndex]

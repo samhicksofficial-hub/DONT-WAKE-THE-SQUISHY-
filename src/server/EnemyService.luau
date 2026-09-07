@@ -516,4 +516,28 @@ function EnemyService.CalmAll(): number
 	return calmed
 end
 
+-- The paid server-wide nap (Products.SleepAll): every giant drops whatever it
+-- is doing and cannot notice ANYONE until the clock runs out — that is what
+-- `noticeBlockedUntil` already means, so the boost is CalmAll with a chosen
+-- duration. A rebuy extends from the current expiry rather than restarting,
+-- and the expiry is published on ReplicatedStorage so every client's BoostUi
+-- can count it down.
+function EnemyService.SleepAll(seconds: number): number
+	local current = tonumber(ReplicatedStorage:GetAttribute("SquishiesAsleepUntil")) or 0
+	local expiry = math.max(os.time(), current) + math.max(1, math.floor(seconds))
+	ReplicatedStorage:SetAttribute("SquishiesAsleepUntil", expiry)
+
+	local slept = 0
+	for _, enemy in enemies do
+		local ok = pcall(function()
+			enemy.noticeBlockedUntil = os.clock() + (expiry - os.time())
+			applyState(enemy, "Sleeping")
+		end)
+		if ok then
+			slept += 1
+		end
+	end
+	return slept
+end
+
 return EnemyService

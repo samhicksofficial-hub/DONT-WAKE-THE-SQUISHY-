@@ -356,6 +356,30 @@ commands.wipe = function(player, _payload)
 	return true, "progress wiped — save deleted, session reset (index panel empties on rejoin)"
 end
 
+-- Fires a server-wide boost without a receipt, so both can be play-tested
+-- while their product ids are still parked at 0. payload.what: "sleep" or
+-- "luck".
+commands.boost = function(_player, payload)
+	local boosts = Config.Boosts :: any
+	local what = tostring(payload.what)
+	if what == "sleep" then
+		local enemy = service("EnemyService")
+		if enemy == nil then
+			return false, "no EnemyService"
+		end
+		local slept = enemy.SleepAll(tonumber(boosts.SleepSeconds) or 60)
+		return true, (counted(slept, "giant", "giants") .. " put to sleep")
+	elseif what == "luck" then
+		local squishy = service("SquishyService")
+		if squishy == nil then
+			return false, "no SquishyService"
+		end
+		squishy.LuckBoost(tonumber(boosts.LuckMinutes) or 15)
+		return true, "server luck is up"
+	end
+	return false, "what should be 'sleep' or 'luck'"
+end
+
 -- Grants the starter bundle without a receipt, so its contents can be
 -- play-tested while the product id is still parked at 0.
 commands.starter = function(player, _payload)

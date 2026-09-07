@@ -436,6 +436,26 @@ Config.Products = {
 	-- 0 like everything else: the pads say "Coming soon" and prompt nothing.
 	SlapProtection = 0,
 	BaseLock = 0,
+	-- The two SERVER-WIDE boosts on the BoostUi side buttons: everyone in the
+	-- server benefits, whoever pays.
+	SleepAll = 0,   -- every Evil Squishy sleeps for Boosts.SleepSeconds
+	ServerLuck = 0, -- rarer field spawns for Boosts.LuckMinutes
+}
+
+-- The server-wide boosts BoostUi sells (Products.SleepAll / ServerLuck).
+Config.Boosts = {
+	SleepSeconds = 60,
+	LuckMinutes = 15,
+	-- Luck tempers every spawn-roll weight to weight^(1/LuckPower), which
+	-- squeezes the gap between Common and Mythical instead of flattening it:
+	-- at 2, a Mythical goes from one roll in two hundred to about one in
+	-- thirty, and the same tempering applies to the variant roll, so the
+	-- Golds start dropping too.
+	LuckPower = 2,
+	-- BoostUi button art, uploaded through Studio. 0 falls back to the pack's
+	-- stock icons until the real images have asset ids.
+	SleepImage = 0,
+	LuckImage = 0,
 }
 
 -- What the defence pads sell (DefenseService). Slap Protection guards against
