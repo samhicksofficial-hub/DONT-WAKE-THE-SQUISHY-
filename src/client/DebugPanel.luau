@@ -471,6 +471,16 @@ local function buildBody(parent: Instance)
 		end)
 	end
 
+	-- The world-changers, shortened to half a minute so the turn-back can be
+	-- watched without sitting out the real five.
+	local specialRow = newRow(parent, ROW_HEIGHT)
+	local specialWidth = 1 / math.max(1, #((Config.SpecialEvents :: any).Events :: { any }))
+	for index, event in (Config.SpecialEvents :: any).Events :: { any } do
+		newButton(specialRow, event.name .. " 30s", specialWidth, function()
+			send("special", { index = index, duration = 30 })
+		end)
+	end
+
 	local extrasRow = newRow(parent, ROW_HEIGHT)
 	newButton(extrasRow, "+1 spin", 0.3, function()
 		send("spins", { delta = 1 })
