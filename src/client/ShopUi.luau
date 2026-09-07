@@ -167,6 +167,11 @@ function ShopUi.Start()
 	local hudRight = hud and hud:FindFirstChild("Right")
 	local shield = hudRight and hudRight:FindFirstChild("Random")
 	if shield ~= nil and shield:IsA("GuiButton") then
+		-- The BoostUi stack owns the middle of the right edge now, so the
+		-- shield moves up toward the corner rather than sitting underneath it.
+		if hudRight ~= nil and hudRight:IsA("GuiObject") then
+			hudRight.Position = UDim2.fromScale(0.945, 0.24)
+		end
 		local starterId = tonumber(products.StarterPack) or 0
 		local title = shield:FindFirstChild("Text")
 		if title ~= nil and title:IsA("TextLabel") then

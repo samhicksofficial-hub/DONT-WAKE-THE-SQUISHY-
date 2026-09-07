@@ -31,8 +31,14 @@ local LUCK_BLUE = Color3.fromRGB(150, 190, 255)
 local PRICE_WHITE = Color3.new(1, 1, 1)
 local ACTIVE_YELLOW = Color3.fromRGB(255, 214, 96)
 local DIM = Color3.fromRGB(190, 195, 205)
-local IMAGE_SIZE = 92
-local BUTTON_WIDTH = 170
+local IMAGE_SIZE = 132
+local BUTTON_WIDTH = 240
+-- The pack's own sunburst — the same rays the starter shield wears — drawn
+-- behind each button's art and turned slowly, so the stack reads as the same
+-- family of storefronts.
+local SUNBURST_IMAGE = "rbxassetid://101335357428300"
+local SUNBURST_SCALE = 1.75
+local SUNBURST_SPIN_SECONDS = 14
 
 local function countdown(seconds: number): string
 	local total = math.max(0, math.floor(seconds))
@@ -72,7 +78,7 @@ local function buildButton(stack: Frame, spec: Spec)
 	local item = Instance.new("Frame")
 	item.Name = spec.name
 	item.BackgroundTransparency = 1
-	item.Size = UDim2.fromOffset(BUTTON_WIDTH, IMAGE_SIZE + 78)
+	item.Size = UDim2.fromOffset(BUTTON_WIDTH, IMAGE_SIZE + 84)
 	item.Parent = stack
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Vertical
@@ -81,14 +87,45 @@ local function buildButton(stack: Frame, spec: Spec)
 	layout.Padding = UDim.new(0, 2)
 	layout.Parent = item
 
+	-- The button itself carries no image: a child always draws over its
+	-- parent's own art, so the rays could never sit BEHIND the icon on a
+	-- one-node button. Burst and icon are siblings inside it instead.
 	local art = Instance.new("ImageButton")
 	art.Name = "Buy"
 	art.BackgroundTransparency = 1
 	art.Size = UDim2.fromOffset(IMAGE_SIZE, IMAGE_SIZE)
 	art.LayoutOrder = 1
-	art.Image = if spec.imageId ~= 0 then ("rbxassetid://%d"):format(spec.imageId) else spec.fallbackIcon
-	art.ScaleType = Enum.ScaleType.Fit
 	art.Parent = item
+
+	local burst = Instance.new("ImageLabel")
+	burst.Name = "SunBurst"
+	burst.BackgroundTransparency = 1
+	burst.AnchorPoint = Vector2.new(0.5, 0.5)
+	burst.Position = UDim2.fromScale(0.5, 0.5)
+	burst.Size = UDim2.fromScale(SUNBURST_SCALE, SUNBURST_SCALE)
+	burst.Image = SUNBURST_IMAGE
+	burst.ScaleType = Enum.ScaleType.Fit
+	burst.ZIndex = 1
+	burst.Parent = art
+	-- A full turn tweened forever: 360 lands back on 0, so the repeat is
+	-- seamless and the "light" appears to keep rolling.
+	local spin = game:GetService("TweenService"):Create(
+		burst,
+		TweenInfo.new(SUNBURST_SPIN_SECONDS, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1),
+		{ Rotation = 360 }
+	)
+	spin:Play()
+
+	local icon = Instance.new("ImageLabel")
+	icon.Name = "Icon"
+	icon.BackgroundTransparency = 1
+	icon.AnchorPoint = Vector2.new(0.5, 0.5)
+	icon.Position = UDim2.fromScale(0.5, 0.5)
+	icon.Size = UDim2.fromScale(1, 1)
+	icon.Image = if spec.imageId ~= 0 then ("rbxassetid://%d"):format(spec.imageId) else spec.fallbackIcon
+	icon.ScaleType = Enum.ScaleType.Fit
+	icon.ZIndex = 2
+	icon.Parent = art
 
 	label(item, spec.title, 40, spec.titleColor, 2)
 	local price = label(item, "", 24, PRICE_WHITE, 3)
@@ -157,10 +194,10 @@ function BoostUi.Start()
 	local stack = Instance.new("Frame")
 	stack.Name = "Stack"
 	stack.AnchorPoint = Vector2.new(1, 0.5)
-	-- Below centre on purpose: the pack's own HUD.Right (now the starter pack
-	-- shield) holds the right-middle, and these must not sit on top of it.
-	stack.Position = UDim2.new(1, -8, 0.74, 0)
-	stack.Size = UDim2.fromOffset(BUTTON_WIDTH, (IMAGE_SIZE + 78) * 2 + 18)
+	-- Dead centre of the right edge, like the reference stack; ShopUi moves
+	-- the starter shield up to the top-right corner so the two never touch.
+	stack.Position = UDim2.new(1, -10, 0.5, 0)
+	stack.Size = UDim2.fromOffset(BUTTON_WIDTH, (IMAGE_SIZE + 84) * 2 + 22)
 	stack.BackgroundTransparency = 1
 	stack.Parent = gui
 	local layout = Instance.new("UIListLayout")
