@@ -356,6 +356,17 @@ commands.wipe = function(player, _payload)
 	return true, "progress wiped — save deleted, session reset (index panel empties on rejoin)"
 end
 
+-- Grants the starter bundle without a receipt, so its contents can be
+-- play-tested while the product id is still parked at 0.
+commands.starter = function(player, _payload)
+	local shopService = service("ShopService")
+	if shopService == nil then
+		return false, "no ShopService"
+	end
+	shopService.DebugGrantStarterPack(player)
+	return true, "starter pack granted"
+end
+
 -- Grants a defence without a receipt, so both can be play-tested while their
 -- product ids are still parked at 0. payload.what: "slap" or "lock".
 commands.defend = function(player, payload)

@@ -88,6 +88,12 @@ local function grantStarterPack(player: Player)
 	player:SetAttribute("StarterPackOwned", true)
 end
 
+-- The dev panel's way to hand the bundle over while the product id is still
+-- parked at 0 — without an id there is no receipt to arrive.
+function ShopService.DebugGrantStarterPack(player: Player)
+	grantStarterPack(player)
+end
+
 -- The starter pack's shop window in the WORLD: any instance named
 -- StarterPackDisplay in the workspace gets a purchase prompt hung off it. The
 -- prop itself is the mapper's art — a shield, a crate, whatever stands there —
