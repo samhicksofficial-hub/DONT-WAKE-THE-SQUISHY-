@@ -112,6 +112,9 @@ local function gather(player: Player): any
 		rebirths = numberAttribute(player, "Rebirths", 0),
 		spins = numberAttribute(player, "Spins", 0),
 		boostUntil = numberAttribute(player, "BoostUntil", 0),
+		-- One-time purchases must stay bought across sessions, or the shop
+		-- would offer them again to someone who already paid.
+		starterPack = player:GetAttribute("StarterPackOwned") == true,
 		upgrades = upgradeLevels,
 		discovered = if discovery ~= nil then discovery.ExportKeys(player) else (previous.discovered or {}),
 		plot = plot,
@@ -136,6 +139,9 @@ local function applyScalars(player: Player, profile: any)
 	-- A boost that expired while they were away is simply over.
 	if typeof(profile.boostUntil) == "number" and profile.boostUntil > os.time() then
 		player:SetAttribute("BoostUntil", math.floor(profile.boostUntil))
+	end
+	if profile.starterPack == true then
+		player:SetAttribute("StarterPackOwned", true)
 	end
 
 	local upgrades = service("UpgradeService")

@@ -500,9 +500,16 @@ Config.Gear = {
 -- What the shop's items actually grant — one place to tune, read by
 -- ShopService (grants) and ShopUi (card labels) so they can never disagree.
 Config.Shop = {
-	StarterPackCash = 25e3,
-	StarterPackSpins = 3,
-	StarterPackRarity = "Rare",
+	-- The one-time starter bundle (Products.StarterPack; priced R$9 in the
+	-- Dashboard). Tuned to compress the first hour, never the first day:
+	-- cash enough for ground slots and first upgrades but well short of a
+	-- floor, a Gold Epic that puts the variant system on show from minute
+	-- one, and a handful of spins — worth paying for now that they drip at
+	-- one per half hour. One per player; the profile remembers.
+	StarterPackCash = 100e3,
+	StarterPackSpins = 5,
+	StarterPackRarity = "Epic",
+	StarterPackVariant = "Gold",
 	Boost2xMinutes = 30,
 	Boost2xMult = 2,
 	VipIncomeMult = 1.5,

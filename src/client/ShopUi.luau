@@ -137,7 +137,10 @@ function ShopUi.Start()
 		local receive = liftReceive(starter)
 		if receive ~= nil then
 			local squishy = receive:FindFirstChild("Item1")
-			setText(squishy, "Name", ("%s Squishy"):format(shop.StarterPackRarity))
+			-- The variant leads the name ("Gold Epic Squishy"): the coat is
+			-- the flashy half of what the pack is selling.
+			local squishyName = ("%s %s Squishy"):format(shop.StarterPackVariant or "", shop.StarterPackRarity)
+			setText(squishy, "Name", (squishyName:gsub("^%s+", "")))
 			setText(squishy, "Income", "")
 			local spins = receive:FindFirstChild("Item2")
 			setText(spins, "Name", ("%d Spins"):format(shop.StarterPackSpins))
@@ -145,6 +148,14 @@ function ShopUi.Start()
 			setText(receive:FindFirstChild("Cash1"), "Amount", "+" .. Util.formatMoney(shop.StarterPackCash))
 		end
 		bindBuy(starter:FindFirstChild("Buy"), tonumber(products.StarterPack) or 0, false)
+
+		-- A one-time bundle vanishes from the shelf once bought: showing an
+		-- unbuyable card would only invite a dead click.
+		local function refreshStarter()
+			starter.Visible = player:GetAttribute("StarterPackOwned") ~= true
+		end
+		player:GetAttributeChangedSignal("StarterPackOwned"):Connect(refreshStarter)
+		refreshStarter()
 	end
 
 	-- ---------- VIP Pack (game pass, permanent) ----------
