@@ -580,13 +580,20 @@ Config.Plot = {
 	FloorPrices = { 500e3, 10e6, 250e6, 7.5e9, 250e9 },
 	SlotsPerRow = 5,
 	RowsPerFloor = 2,
-	-- Slots on ONE floor. The ground floor sells its slots individually (the
-	-- early game); every bought floor arrives with all ten already open, which
-	-- is what you are paying the floor price for.
+	-- Slots on ONE floor. EVERY floor sells its slots individually now: the
+	-- ground's staged unlock is the early game, and each bought storey replays
+	-- it — the floor price buys the storey itself, and the pads on it are then
+	-- bought one at a time, in order, exactly like the ground's.
 	SlotsPerFloor = 10,
 	StartUnlocked = 4,
 	-- Price to unlock ground-floor slot N (entries <= StartUnlocked ignored).
 	UnlockPrices = { 0, 0, 0, 0, 150, 1000, 7500, 50000, 350000, 2500000 },
+	-- Slot N on the Kth floor ABOVE ground costs
+	-- UpperUnlockPrices[N] * UpperFloorFactors[K]. Tuned so a storey's ten
+	-- pads together run roughly ten times its door price (FloorPrices): the
+	-- floor is the cheap way in, the pads are the spend.
+	UpperUnlockPrices = { 5e3, 10e3, 20e3, 40e3, 80e3, 160e3, 320e3, 640e3, 1.28e6, 2.56e6 },
+	UpperFloorFactors = { 1, 20, 400, 8000 },
 	AccrueTick = 0.5,         -- seconds between income accrual updates
 	-- XZ footprint of a plot. Width is capped near 60 by the spacing between
 	-- neighbours (fieldSize.X / 4); DEPTH grows outward into open ground, which

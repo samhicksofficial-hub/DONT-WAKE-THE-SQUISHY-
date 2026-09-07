@@ -694,6 +694,21 @@ local function unlockSlot(plot: PlotRecord, slot: SlotRecord)
 	end
 end
 
+-- What opening `slot` costs. The ground floor uses the classic ladder; a
+-- bought storey replays a steeper one, scaled by how high it sits.
+local function slotUnlockPrice(plot: PlotRecord, slot: SlotRecord): number
+	if slot.isGroundFloor then
+		return Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
+	end
+	local perFloor = (Config.Plot.SlotsPerRow :: number) * (Config.Plot.RowsPerFloor :: number)
+	local storey = math.floor((slot.index - 1) / perFloor) + 1
+	local groundStorey = math.floor(tonumber(plot.player:GetAttribute("FloorsBelow")) or 0) + 1
+	local above = storey - groundStorey
+	local prices = (Config.Plot :: any).UpperUnlockPrices :: { number }
+	local factors = (Config.Plot :: any).UpperFloorFactors :: { number }
+	return math.floor((prices[slot.slotOnFloor] or 0) * (factors[above] or factors[#factors] or 1))
+end
+
 local function onUnlockTouched(plot: PlotRecord, slot: SlotRecord, hitPart: BasePart)
 	if slot.unlocked then
 		return
@@ -710,8 +725,7 @@ local function onUnlockTouched(plot: PlotRecord, slot: SlotRecord, hitPart: Base
 		return
 	end
 	slot.lastTouch = now
-	-- Prices are per position ON the ground floor, not per global slot index.
-	local price = Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
+	local price = slotUnlockPrice(plot, slot)
 	if not servicesRef.EconomyService.TrySpend(plot.player, price) then
 		return
 	end
@@ -746,9 +760,7 @@ local function createUnlockPad(plot: PlotRecord, slot: SlotRecord)
 	local anchor = slot.pedestalTop or pad
 	local gui, priceLabel = buildPriceCard(anchor, "UnlockGui", 7, 3.8, 4, 130, "Unlock")
 	gui.Enabled = false
-	-- Prices are per position ON the ground floor, not per global slot index.
-	local price = Config.Plot.UnlockPrices[slot.slotOnFloor] or 0
-	priceLabel.Text = Util.formatMoney(price)
+	priceLabel.Text = Util.formatMoney(slotUnlockPrice(plot, slot))
 	slot.unlockPad = pad
 	slot.unlockGui = gui
 	table.insert(plot.connections, pad.Touched:Connect(function(hitPart: BasePart)
@@ -1540,13 +1552,16 @@ local function buildPlot(player: Player, spotIndex: number): boolean
 		local slotFloorTop = layout.floorTop
 		local frame = slotFrame(baseCFrame, layout)
 		local isItem = layout.isItemFloor
-		-- Ground floor: the usual staged unlock. Any other floor was paid for
-		-- as a whole, so every slot on it is open from the moment it exists —
-		-- including the basement's item stands, which are "open" but never
-		-- placeable (isItemSlot keeps them out of findFreeSlot).
-		local unlocked = if layout.isGroundFloor
-			then layout.slotOnFloor <= (Config.Plot.StartUnlocked :: number)
-			else true
+		-- Ground floor: the usual staged unlock. Every BOUGHT storey now
+		-- arrives locked too — the floor price buys the storey, and its pads
+		-- are then bought one at a time, replaying the ground's early game.
+		-- The basement's item stands stay "open": they are stands, not pads,
+		-- and never placeable anyway (isItemSlot keeps them out of
+		-- findFreeSlot).
+		local unlocked = if isItem
+			then true
+			elseif layout.isGroundFloor then layout.slotOnFloor <= (Config.Plot.StartUnlocked :: number)
+			else false
 		-- Each slot reads as a tile: a darker border slab flat on the floor with
 		-- the grey platform sitting on top of it. All three pieces are reused
 		-- when they came in on a hand-edited shell, so what the owner saved is
@@ -1757,15 +1772,32 @@ local function rebuildPlot(player: Player, wipe: boolean?)
 	-- so the fresh build comes up exactly as a brand-new claim does and the
 	-- restore loops below no-op naturally.
 	local saved = if wipe == true then {} else snapshotSlots(plot)
-	local groundUnlocks = 0
+
+	local perFloor = (Config.Plot.SlotsPerRow :: number) * (Config.Plot.RowsPerFloor :: number)
+	local function storeyOf(index: number): number
+		return math.floor((index - 1) / perFloor) + 1
+	end
+	local function groundStoreyOf(record: PlotRecord): number
+		for _, slot in record.slots do
+			if slot.isGroundFloor then
+				return storeyOf(slot.index)
+			end
+		end
+		return 1
+	end
+
+	-- Which pads were bought, keyed by storey RELATIVE TO GROUND — buying a
+	-- basement renumbers every absolute index. The highest open position per
+	-- storey IS the count bought, because slots only ever sell in order. A
+	-- storey the rebuild adds has no entry here, which is exactly how a fresh
+	-- floor arrives with every pad locked.
+	local unlockedByRel: { [number]: number } = {}
 	if wipe ~= true then
+		local oldGround = groundStoreyOf(plot)
 		for _, slot in plot.slots do
-			-- GROUND floor only. slotOnFloor is 1..SlotsPerFloor on every storey, so
-			-- the old bound here was always true: a bought floor arrives with all ten
-			-- slots open, which counted as ten ground-floor purchases and handed the
-			-- player every remaining ground slot free on the next rebuild.
-			if slot.unlocked and slot.isGroundFloor then
-				groundUnlocks = math.max(groundUnlocks, slot.slotOnFloor)
+			if slot.unlocked and not slot.isItemSlot then
+				local rel = storeyOf(slot.index) - oldGround
+				unlockedByRel[rel] = math.max(unlockedByRel[rel] or 0, slot.slotOnFloor)
 			end
 		end
 	end
@@ -1783,18 +1815,24 @@ local function rebuildPlot(player: Player, wipe: boolean?)
 		return
 	end
 
-	-- Restore: ground-floor unlocks first, then the squishies in slot order.
+	-- Restore: bought pads first (every storey), then the squishies in slot
+	-- order.
 	local fresh = plots[player]
 	if fresh == nil then
 		return
 	end
+	local newGround = groundStoreyOf(fresh)
 	for _, slot in fresh.slots do
-		if slot.isGroundFloor and not slot.unlocked and slot.slotOnFloor <= groundUnlocks then
-			-- unlockSlot, not a bare flag. Setting `unlocked` alone leaves the
-			-- padlock standing and never builds a collect pad, so a slot the
-			-- player had already paid for came back looking locked and quietly
-			-- accrued its income into a pad that does not exist.
-			pcall(unlockSlot, fresh, slot)
+		if not slot.unlocked and not slot.isItemSlot then
+			local count = unlockedByRel[storeyOf(slot.index) - newGround]
+			if count ~= nil and slot.slotOnFloor <= count then
+				-- unlockSlot, not a bare flag. Setting `unlocked` alone leaves
+				-- the padlock standing and never builds a collect pad, so a
+				-- slot the player had already paid for came back looking
+				-- locked and quietly accrued its income into a pad that does
+				-- not exist.
+				pcall(unlockSlot, fresh, slot)
+			end
 		end
 	end
 	local index = 1
@@ -2294,16 +2332,27 @@ function PlotService.ExportPlot(player: Player): any?
 	end
 	local above, below = floorCounts(player)
 	local groundIndex = below + 1
+	local perFloor = (Config.Plot.SlotsPerRow :: number) * (Config.Plot.RowsPerFloor :: number)
 	local groundUnlocked = 0
+	-- Bought pads per storey, keyed RELATIVE TO GROUND (as a string — this
+	-- table rides through JSON, which mangles sparse number keys). Every floor
+	-- sells its slots one at a time and in order, so the highest open position
+	-- IS the count bought.
+	local unlockedByFloor: { [string]: number } = {}
 	local placed = {}
 	for _, slot in plot.slots do
 		if slot.isItemSlot then
 			continue -- basement stands hold gear, and gear is a game pass
 		end
-		if slot.isGroundFloor and slot.unlocked then
-			-- The ground floor sells its slots one at a time and always in
-			-- order, so the highest open position IS the count bought.
-			groundUnlocked = math.max(groundUnlocked, slot.slotOnFloor)
+		if slot.unlocked then
+			local rel = math.floor((slot.index - 1) / perFloor) + 1 - groundIndex
+			local key = tostring(rel)
+			unlockedByFloor[key] = math.max(unlockedByFloor[key] or 0, slot.slotOnFloor)
+			if slot.isGroundFloor then
+				-- Kept alongside the map so an older build reading this
+				-- profile still restores the ground.
+				groundUnlocked = math.max(groundUnlocked, slot.slotOnFloor)
+			end
 		end
 		if slot.occupied and slot.squishy ~= nil then
 			local storey = math.floor((slot.index - 1) / (Config.Plot.SlotsPerRow * Config.Plot.RowsPerFloor)) + 1
@@ -2321,6 +2370,7 @@ function PlotService.ExportPlot(player: Player): any?
 		floorsAbove = above,
 		floorsBelow = below,
 		groundUnlocked = groundUnlocked,
+		unlockedByFloor = unlockedByFloor,
 		placed = placed,
 	}
 end
@@ -2356,12 +2406,28 @@ function PlotService.ImportPlot(player: Player, data: any): (boolean, number)
 		byPlace[("%d:%d"):format(storey - groundIndex, slot.slotOnFloor)] = slot
 	end
 
+	-- Bought pads per storey. An older profile carries only the ground count —
+	-- and was saved under the rule that a bought floor came with every pad
+	-- open, so its upper storeys unlock in FULL rather than being
+	-- retroactively confiscated.
+	local unlockedByFloor = if typeof(data.unlockedByFloor) == "table" then data.unlockedByFloor else nil
 	local groundUnlocked = math.floor(tonumber(data.groundUnlocked) or 0)
 	for _, slot in plot.slots do
-		if slot.isGroundFloor and not slot.unlocked and not slot.isItemSlot and slot.slotOnFloor <= groundUnlocked then
-			-- unlockSlot, not a bare flag: setting `unlocked` alone leaves the
-			-- padlock standing and never builds a collect pad.
-			pcall(unlockSlot, plot, slot)
+		if not slot.unlocked and not slot.isItemSlot then
+			local rel = math.floor((slot.index - 1) / perFloor) + 1 - groundIndex
+			local wanted
+			if unlockedByFloor ~= nil then
+				wanted = slot.slotOnFloor <= (math.floor(tonumber(unlockedByFloor[tostring(rel)]) or 0))
+			elseif rel == 0 then
+				wanted = slot.slotOnFloor <= groundUnlocked
+			else
+				wanted = rel > 0 -- the legacy all-open rule for bought floors
+			end
+			if wanted then
+				-- unlockSlot, not a bare flag: setting `unlocked` alone leaves
+				-- the padlock standing and never builds a collect pad.
+				pcall(unlockSlot, plot, slot)
+			end
 		end
 	end
 
