@@ -309,6 +309,30 @@ function SaveService.SaveNow(player: Player): boolean
 	return savePlayer(player, "manual")
 end
 
+-- Deletes the stored profile outright — the dev panel's progress wipe. The
+-- in-memory copy goes too, and the player is marked loaded regardless of how
+-- their join went: with the profile gone there is nothing left for the
+-- write-gate to protect, and the session SHOULD keep saving, because what it
+-- writes next is the freshly reset state.
+function SaveService.WipeProgress(player: Player): boolean
+	local dataStore = store
+	if dataStore == nil then
+		return false
+	end
+	local ok, err = pcall(function()
+		dataStore:RemoveAsync(keyFor(player))
+	end)
+	if not ok then
+		warn(("[SaveService] wipe failed for %s: %s"):format(player.Name, tostring(err)))
+		return false
+	end
+	profiles[player] = nil
+	offlinePending[player] = nil
+	player:SetAttribute("OfflinePending", nil)
+	loaded[player] = true
+	return true
+end
+
 function SaveService.Start(services: any, _map: any)
 	servicesRef = services
 

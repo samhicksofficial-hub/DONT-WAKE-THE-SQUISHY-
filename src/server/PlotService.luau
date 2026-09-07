@@ -1748,20 +1748,25 @@ end
 
 -- Rebuilds a player's base at its current floor count and puts every placed
 -- squishy back where it was. Called after buying a floor.
-local function rebuildPlot(player: Player)
+local function rebuildPlot(player: Player, wipe: boolean?)
 	local plot = plots[player]
 	if plot == nil then
 		return
 	end
-	local saved = snapshotSlots(plot)
+	-- A WIPING rebuild carries nothing across — no snapshot, no unlock count —
+	-- so the fresh build comes up exactly as a brand-new claim does and the
+	-- restore loops below no-op naturally.
+	local saved = if wipe == true then {} else snapshotSlots(plot)
 	local groundUnlocks = 0
-	for _, slot in plot.slots do
-		-- GROUND floor only. slotOnFloor is 1..SlotsPerFloor on every storey, so
-		-- the old bound here was always true: a bought floor arrives with all ten
-		-- slots open, which counted as ten ground-floor purchases and handed the
-		-- player every remaining ground slot free on the next rebuild.
-		if slot.unlocked and slot.isGroundFloor then
-			groundUnlocks = math.max(groundUnlocks, slot.slotOnFloor)
+	if wipe ~= true then
+		for _, slot in plot.slots do
+			-- GROUND floor only. slotOnFloor is 1..SlotsPerFloor on every storey, so
+			-- the old bound here was always true: a bought floor arrives with all ten
+			-- slots open, which counted as ten ground-floor purchases and handed the
+			-- player every remaining ground slot free on the next rebuild.
+			if slot.unlocked and slot.isGroundFloor then
+				groundUnlocks = math.max(groundUnlocks, slot.slotOnFloor)
+			end
 		end
 	end
 
@@ -2258,6 +2263,20 @@ function PlotService.DebugSetFloors(player: Player, above: number, below: number
 	player:SetAttribute("FloorsBelow", math.clamp(math.floor(below), 0, Config.Plot.MaxBelow :: number))
 	rebuildPlot(player)
 	return true
+end
+
+-- Tears the plot back to a brand-new claim — ground floor only, starter slots
+-- locked back up, nothing placed. The dev panel's progress wipe; DebugSetFloors
+-- cannot do this because an ordinary rebuild deliberately carries the paid-for
+-- ground unlocks across.
+function PlotService.DebugResetPlot(player: Player): boolean
+	if plots[player] == nil then
+		return false
+	end
+	player:SetAttribute("FloorsAbove", 0)
+	player:SetAttribute("FloorsBelow", 0)
+	rebuildPlot(player, true)
+	return plots[player] ~= nil
 end
 
 -- ------------------------------------------------------------- persistence --

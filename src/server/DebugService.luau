@@ -316,6 +316,46 @@ commands.discoverAll = function(player, _payload)
 	return true, ("index filled in (%d new)"):format(added)
 end
 
+-- The panel's progress reset: deletes the saved profile AND winds the live
+-- session back to day one, in that order — if the delete fails the session is
+-- left untouched, so the button can never half-wipe. The live reset matters as
+-- much as the delete: the next autosave writes whatever the session holds, and
+-- without it the wiped profile would be quietly resurrected two minutes later.
+commands.wipe = function(player, _payload)
+	local save = service("SaveService")
+	if save == nil then
+		return false, "no SaveService"
+	end
+	local wiped = false
+	local ok = pcall(function()
+		wiped = save.WipeProgress(player) == true
+	end)
+	if not ok or not wiped then
+		return false, "could not delete the saved profile — nothing touched"
+	end
+
+	local economy = service("EconomyService")
+	if economy ~= nil then
+		economy.SetMoney(player, 0)
+	end
+	player:SetAttribute("Rebirths", 0)
+	player:SetAttribute("Spins", Config.Wheel.StartingSpins)
+	player:SetAttribute("NextSpinAt", os.time() + Config.Wheel.SpinCooldown)
+	player:SetAttribute("BoostUntil", nil)
+	for _, name in TRACKS do
+		player:SetAttribute("Upgrade_" .. name, 1)
+	end
+	local plot = service("PlotService")
+	if plot ~= nil then
+		pcall(plot.DebugResetPlot, player)
+	end
+	local discovery = service("DiscoveryService")
+	if discovery ~= nil then
+		pcall(discovery.ClearAll, player)
+	end
+	return true, "progress wiped — save deleted, session reset (index panel empties on rejoin)"
+end
+
 -- Grants a defence without a receipt, so both can be play-tested while their
 -- product ids are still parked at 0. payload.what: "slap" or "lock".
 commands.defend = function(player, payload)

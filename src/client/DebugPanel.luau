@@ -478,6 +478,37 @@ local function buildBody(parent: Instance)
 	newButton(extrasRow, "Fill index", 0.34, function()
 		send("discoverAll")
 	end)
+
+	newHeader(parent, "danger")
+	local dangerRow = newRow(parent, ROW_HEIGHT)
+	-- Two presses, on purpose: this one deletes the SAVED profile, and a
+	-- misclick in a debug panel must never be able to do that on its own. The
+	-- armed state stands down by itself after a few seconds.
+	local resetArmed = false
+	local resetToken = 0
+	local resetButton: TextButton
+	local function disarmReset()
+		resetArmed = false
+		resetButton.Text = "Reset ALL progress"
+		resetButton.BackgroundColor3 = COLOR_BUTTON
+	end
+	resetButton = newButton(dangerRow, "Reset ALL progress", 1, function()
+		resetToken += 1
+		if not resetArmed then
+			resetArmed = true
+			local mine = resetToken
+			resetButton.Text = "Click again to DELETE the save"
+			resetButton.BackgroundColor3 = COLOR_BAD
+			task.delay(3, function()
+				if resetToken == mine then
+					disarmReset()
+				end
+			end)
+			return
+		end
+		disarmReset()
+		send("wipe")
+	end)
 end
 
 local function build(): ScreenGui

@@ -138,6 +138,13 @@ function DiscoveryService.ImportKeys(player: Player, keys: { string })
 	pcall(sendFullSet, player)
 end
 
+-- Forgets everything the player has found — the dev panel's progress wipe.
+-- The saved profile empties on the next save; the index PANEL only empties on
+-- rejoin, because the client's set is add-only by design (see IndexUi).
+function DiscoveryService.ClearAll(player: Player)
+	discovered[player] = {}
+end
+
 function DiscoveryService.IsDiscovered(player: Player, squishyName: string, variantName: string?): boolean
 	local set = discovered[player]
 	return set ~= nil and set[keyFor(squishyName, variantName)] == true
