@@ -217,33 +217,24 @@ local function priceLine(gui: Instance, productId: number)
 	end)
 end
 
-local function buildPad(
-	parent: Model,
-	origin: CFrame,
-	side: number,
-	color: Color3,
-	title: string,
-	productId: number,
-	onTouch: (Player) -> ()
-)
-	local _, halfD = halfBase()
-	local pad = Instance.new("Part")
-	pad.Name = title:gsub("%s", "") .. "Pad"
-	pad.Shape = Enum.PartType.Cylinder
-	pad.Size = Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER)
-	pad.CFrame = origin
-		* CFrame.new(side * PAD_SIDE, PAD_THICKNESS / 2 + 0.1, -(halfD + PAD_OUT))
-		* CFrame.Angles(0, 0, math.rad(90))
-	pad.Color = color
-	pad.Material = Enum.Material.Neon
-	pad.Anchored = true
-	pad.CanCollide = false
-	pad.Parent = parent
+-- How far above the pad its label floats.
+local PAD_LABEL_LIFT = 4.4
+
+-- The label and the touch wiring, on a pad part that already stands where it
+-- should. The billboard hangs off an attachment floated straight up in WORLD
+-- space: an offset on the gui itself follows the part's orientation, and these
+-- pads are cylinders lying on their side, which is how the labels first ended
+-- up beside the buttons instead of above them.
+local function dressPad(pad: BasePart, title: string, productId: number, onTouch: (Player) -> ())
+	local anchor = Instance.new("Attachment")
+	anchor.Name = "LabelAnchor"
+	anchor.WorldPosition = pad.Position + Vector3.new(0, PAD_LABEL_LIFT, 0)
+	anchor.Parent = pad
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "PadGui"
+	gui.Adornee = anchor
 	gui.Size = UDim2.fromScale(6.5, 2.6)
-	gui.StudsOffsetWorldSpace = Vector3.new(0, 4.4, 0)
 	gui.MaxDistance = 80
 	gui.Parent = pad
 	local layout = Instance.new("UIListLayout")
@@ -266,21 +257,58 @@ local function buildPad(
 	end)
 end
 
--- Stands the pair of pads at one plot spot, wiping any pair already there.
--- Rebuilt rather than adopted: cheaper to reason about, identical to look at,
--- and a marker nudged in the editor is followed automatically. Callable from
--- Edit mode with a marker's CFrame, which is how the pads get into the saved
--- place where they can be SEEN while editing.
+-- Builds one pad from scratch at the stock spot beside the front door.
+local function buildPad(
+	parent: Model,
+	origin: CFrame,
+	side: number,
+	color: Color3,
+	title: string,
+	productId: number,
+	onTouch: (Player) -> ()
+)
+	local _, halfD = halfBase()
+	local pad = Instance.new("Part")
+	pad.Name = title:gsub("%s", "") .. "Pad"
+	pad.Shape = Enum.PartType.Cylinder
+	pad.Size = Vector3.new(PAD_THICKNESS, PAD_DIAMETER, PAD_DIAMETER)
+	pad.CFrame = origin
+		* CFrame.new(side * PAD_SIDE, PAD_THICKNESS / 2 + 0.1, -(halfD + PAD_OUT))
+		* CFrame.Angles(0, 0, math.rad(90))
+	pad.Color = color
+	pad.Material = Enum.Material.Neon
+	pad.Anchored = true
+	pad.CanCollide = false
+	pad.Parent = parent
+	dressPad(pad, title, productId, onTouch)
+end
+
+-- Takes over a pad the mapper already placed: the part — and so wherever they
+-- dragged, tilted or recoloured it — survives, and only what hangs off it is
+-- rebuilt. Cloned and swapped rather than reused, so a re-run can never stack
+-- a second Touched connection on the same part.
+local function adoptPad(parent: Model, oldPad: BasePart, title: string, productId: number, onTouch: (Player) -> ())
+	local pad = oldPad:Clone()
+	for _, child in pad:GetChildren() do
+		child:Destroy()
+	end
+	pad.Parent = parent
+	dressPad(pad, title, productId, onTouch)
+end
+
+-- Stands the pair of pads at one plot spot. HAND-EDITED POSITIONS WIN, the
+-- same doctrine as the map: a saved pad that the mapper has dragged somewhere
+-- is adopted where it stands, and only a spot with no saved pad gets one built
+-- at the stock position. Guis and wiring are always rebuilt fresh either way.
+-- Callable from Edit mode with a marker's CFrame, which is how the pads get
+-- into the saved place where they can be SEEN (and moved) while editing.
 function DefenseService.EnsurePads(spotIndex: number, origin: CFrame)
 	local parent = folder()
 	local name = ("Pads_Spot%d"):format(spotIndex)
 	local previous = parent:FindFirstChild(name)
-	if previous ~= nil then
-		previous:Destroy()
-	end
+
 	local pads = Instance.new("Model")
 	pads.Name = name
-	pads.Parent = parent
 
 	-- Only the spot's CURRENT owner gets a prompt: the pad asks PlotService
 	-- which spot the toucher holds and matches it against its own.
@@ -310,10 +338,22 @@ function DefenseService.EnsurePads(spotIndex: number, origin: CFrame)
 	end
 
 	local products = Config.Products :: any
-	buildPad(pads, origin, -1, PROTECT_COLOR, "Slap Protection",
-		tonumber(products.SlapProtection) or 0, prompt(tonumber(products.SlapProtection) or 0))
-	buildPad(pads, origin, 1, LOCK_COLOR, "Lock Base",
-		tonumber(products.BaseLock) or 0, prompt(tonumber(products.BaseLock) or 0))
+	for _, spec in {
+		{ side = -1, color = PROTECT_COLOR, title = "Slap Protection", id = tonumber(products.SlapProtection) or 0 },
+		{ side = 1, color = LOCK_COLOR, title = "Lock Base", id = tonumber(products.BaseLock) or 0 },
+	} do
+		local saved = if previous ~= nil then previous:FindFirstChild(spec.title:gsub("%s", "") .. "Pad") else nil
+		if saved ~= nil and saved:IsA("BasePart") then
+			adoptPad(pads, saved, spec.title, spec.id, prompt(spec.id))
+		else
+			buildPad(pads, origin, spec.side, spec.color, spec.title, spec.id, prompt(spec.id))
+		end
+	end
+
+	if previous ~= nil then
+		previous:Destroy()
+	end
+	pads.Parent = parent
 end
 
 -- The laser wall: a rank of glowing bars for the eyes, one invisible slab for
