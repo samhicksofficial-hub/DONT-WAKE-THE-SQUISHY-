@@ -158,6 +158,43 @@ function ShopUi.Start()
 		refreshStarter()
 	end
 
+	-- ---------- the HUD's shield button ----------
+	-- The pack ships a spare button on the HUD's right edge — shield art with
+	-- "Price"/"Random" placeholder text — and it is the starter pack's screen
+	-- storefront. Retexted here, sold through the same product, and hidden for
+	-- good once owned, exactly like the shop card above.
+	local hud = refs.gui:FindFirstChild("HUD")
+	local hudRight = hud and hud:FindFirstChild("Right")
+	local shield = hudRight and hudRight:FindFirstChild("Random")
+	if shield ~= nil and shield:IsA("GuiButton") then
+		local starterId = tonumber(products.StarterPack) or 0
+		local title = shield:FindFirstChild("Text")
+		if title ~= nil and title:IsA("TextLabel") then
+			title.Text = "Starter Pack"
+		end
+		local priceLabel = shield:FindFirstChild("Price")
+		if priceLabel ~= nil and priceLabel:IsA("TextLabel") then
+			priceLabel.Text = if starterId == 0 then "Soon" else "R$ ..."
+			if starterId ~= 0 then
+				task.spawn(function()
+					local ok, info = pcall(function()
+						return MarketplaceService:GetProductInfo(starterId, Enum.InfoType.Product)
+					end)
+					local robux = if ok and typeof(info) == "table" then tonumber((info :: any).PriceInRobux) else nil
+					if robux ~= nil and priceLabel.Parent ~= nil then
+						priceLabel.Text = ("R$ %d"):format(robux)
+					end
+				end)
+			end
+		end
+		bindBuy(shield, starterId, false)
+		local function refreshShield()
+			(shield :: GuiButton).Visible = player:GetAttribute("StarterPackOwned") ~= true
+		end
+		player:GetAttributeChangedSignal("StarterPackOwned"):Connect(refreshShield)
+		refreshShield()
+	end
+
 	-- ---------- VIP Pack (game pass, permanent) ----------
 
 	local vip = scrolling:FindFirstChild("ProPack")

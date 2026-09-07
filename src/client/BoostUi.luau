@@ -157,7 +157,9 @@ function BoostUi.Start()
 	local stack = Instance.new("Frame")
 	stack.Name = "Stack"
 	stack.AnchorPoint = Vector2.new(1, 0.5)
-	stack.Position = UDim2.new(1, -8, 0.5, 0)
+	-- Below centre on purpose: the pack's own HUD.Right (now the starter pack
+	-- shield) holds the right-middle, and these must not sit on top of it.
+	stack.Position = UDim2.new(1, -8, 0.74, 0)
 	stack.Size = UDim2.fromOffset(BUTTON_WIDTH, (IMAGE_SIZE + 78) * 2 + 18)
 	stack.BackgroundTransparency = 1
 	stack.Parent = gui

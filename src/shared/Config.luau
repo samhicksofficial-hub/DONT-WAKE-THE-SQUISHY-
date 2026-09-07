@@ -452,10 +452,10 @@ Config.Boosts = {
 	-- thirty, and the same tempering applies to the variant roll, so the
 	-- Golds start dropping too.
 	LuckPower = 2,
-	-- BoostUi button art, uploaded through Studio. 0 falls back to the pack's
-	-- stock icons until the real images have asset ids.
-	SleepImage = 0,
-	LuckImage = 0,
+	-- BoostUi button art: Sam's uploads (the pink Zzz squishy and the clover),
+	-- verified by eye against the asset ids on 2026-09-07.
+	SleepImage = 120781003340705,
+	LuckImage = 79715243708996,
 }
 
 -- What the defence pads sell (DefenseService). Slap Protection guards against
