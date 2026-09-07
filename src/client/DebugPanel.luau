@@ -484,6 +484,9 @@ local function buildBody(parent: Instance)
 
 	newHeader(parent, "danger")
 	local dangerRow = newRow(parent, ROW_HEIGHT)
+	-- Named uniquely, unlike the generic rows: automation (and bug reports)
+	-- need to point at THIS button unambiguously.
+	dangerRow.Name = "DangerRow"
 	-- Two presses, on purpose: this one deletes the SAVED profile, and a
 	-- misclick in a debug panel must never be able to do that on its own. The
 	-- armed state stands down by itself after a few seconds.
@@ -512,6 +515,7 @@ local function buildBody(parent: Instance)
 		disarmReset()
 		send("wipe")
 	end)
+	resetButton.Name = "ResetProgress"
 end
 
 local function build(): ScreenGui
