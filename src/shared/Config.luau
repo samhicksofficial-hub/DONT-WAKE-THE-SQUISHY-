@@ -522,7 +522,12 @@ Config.Plot = {
 	-- Price of the Nth extra floor, counting both directions together, so the
 	-- last floor costs the same whichever way you grew. Five entries because
 	-- MaxAbove + MaxBelow is five.
-	FloorPrices = { 500e3, 6e6, 75e6, 900e6, 11e9 },
+	--
+	-- The creep STEEPENS floor by floor (x20, x25, x30, x33) instead of the
+	-- old flat x12: the first extra floor stays an early-game purchase, and
+	-- each one after it bites harder, so the last is a project even for a
+	-- plot pulling billions a second.
+	FloorPrices = { 500e3, 10e6, 250e6, 7.5e9, 250e9 },
 	SlotsPerRow = 5,
 	RowsPerFloor = 2,
 	-- Slots on ONE floor. The ground floor sells its slots individually (the
