@@ -307,12 +307,15 @@ local function stepFloors(delta: number)
 	local maxAbove = Config.Plot.MaxAbove :: number
 	local maxBelow = Config.Plot.MaxBelow :: number
 	if delta > 0 then
-		if above <= below and above < maxAbove then
+		-- Grow upward when balanced — or when the basement is already full and
+		-- up is the only way left; otherwise dig. The same alternation buying
+		-- floors follows. (One condition rather than twin branches, which the
+		-- linter read as a copy-paste mistake.)
+		local growUp = (above <= below or below >= maxBelow) and above < maxAbove
+		if growUp then
 			above += 1
 		elseif below < maxBelow then
 			below += 1
-		elseif above < maxAbove then
-			above += 1
 		end
 	elseif delta < 0 then
 		if below >= above and below > 0 then
