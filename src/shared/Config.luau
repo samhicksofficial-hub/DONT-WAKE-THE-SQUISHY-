@@ -452,7 +452,10 @@ Config.Defense = {
 -- the plot's $/s at the moment of the last save, and the while-you-were-away
 -- popup hands it over on the next join — nothing is credited silently.
 Config.Offline = {
-	Cap = 500e6,
+	-- The away clock stops here, so the most an absence can pay is the plot's
+	-- rate times this many seconds (through the same multipliers as any other
+	-- payout). Six hours halved, per the design: rate x 21600 / 2.
+	MaxAwaySeconds = 21600 / 2,
 	-- Shorter absences pay nothing, so a crash-and-rejoin does not open a
 	-- ceremony over pocket change.
 	MinimumAwaySeconds = 60,

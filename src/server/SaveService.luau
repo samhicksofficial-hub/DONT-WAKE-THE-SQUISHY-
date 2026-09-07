@@ -222,6 +222,11 @@ local function computeOffline(player: Player, profile: any)
 	if away < (tonumber(offline.MinimumAwaySeconds) or 60) or rate <= 0 then
 		return
 	end
+	-- The cap is a clock, not a number: stopping the away time at
+	-- MaxAwaySeconds caps the payout at rate x that many seconds, and the
+	-- limit scales with the plot instead of flattening every big base to the
+	-- same figure.
+	away = math.min(away, tonumber(offline.MaxAwaySeconds) or 10800)
 	-- The figure shown is the figure paid, multipliers already in, so the
 	-- popup can never contradict the balance afterwards.
 	local preview = rate * away
@@ -232,7 +237,7 @@ local function computeOffline(player: Player, profile: any)
 			preview = previewed
 		end
 	end
-	local pending = math.min(math.floor(preview), tonumber(offline.Cap) or 500e6)
+	local pending = math.floor(preview)
 	if pending >= 1 then
 		offlinePending[player] = pending
 		player:SetAttribute("OfflinePending", pending)
