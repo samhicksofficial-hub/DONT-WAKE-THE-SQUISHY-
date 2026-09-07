@@ -228,8 +228,11 @@ local PAD_LABEL_LIFT = 4.4
 local function dressPad(pad: BasePart, title: string, productId: number, onTouch: (Player) -> ())
 	local anchor = Instance.new("Attachment")
 	anchor.Name = "LabelAnchor"
-	anchor.WorldPosition = pad.Position + Vector3.new(0, PAD_LABEL_LIFT, 0)
+	-- Parent FIRST: WorldPosition on an orphan attachment has no frame to be
+	-- world-relative to, so the value would be re-read as a local offset the
+	-- moment it gained a rotated parent, and land the label across the map.
 	anchor.Parent = pad
+	anchor.WorldPosition = pad.Position + Vector3.new(0, PAD_LABEL_LIFT, 0)
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "PadGui"
