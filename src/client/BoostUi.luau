@@ -72,6 +72,9 @@ type Spec = {
 	fallbackIcon: string,
 	productId: number,
 	untilAttribute: string,
+	-- Evens out art whose source PNG carries more empty margin than its
+	-- neighbours', so the two buttons read the same visual size.
+	iconScale: number?,
 }
 
 local function buildButton(stack: Frame, spec: Spec)
@@ -121,7 +124,8 @@ local function buildButton(stack: Frame, spec: Spec)
 	icon.BackgroundTransparency = 1
 	icon.AnchorPoint = Vector2.new(0.5, 0.5)
 	icon.Position = UDim2.fromScale(0.5, 0.5)
-	icon.Size = UDim2.fromScale(1, 1)
+	local iconScale = spec.iconScale or 1
+	icon.Size = UDim2.fromScale(iconScale, iconScale)
 	icon.Image = if spec.imageId ~= 0 then ("rbxassetid://%d"):format(spec.imageId) else spec.fallbackIcon
 	icon.ScaleType = Enum.ScaleType.Fit
 	icon.ZIndex = 2
@@ -216,6 +220,9 @@ function BoostUi.Start()
 		fallbackIcon = Config.Icons.Gift,
 		productId = tonumber(products.SleepAll) or 0,
 		untilAttribute = "SquishiesAsleepUntil",
+		-- The sleeper's PNG wears a wide empty margin (the Zzz floats in it),
+		-- so at 1:1 it rendered visibly smaller than the clover.
+		iconScale = 1.35,
 	})
 	buildButton(stack, {
 		name = "ServerLuck",
