@@ -187,7 +187,21 @@ function ShopUi.Start()
 				end)
 			end
 		end
-		bindBuy(shield, starterId, false)
+		-- Wired directly rather than through bindBuy: that helper's convention
+		-- is that a button's "Text" child is its PRICE, and on this button the
+		-- "Text" child is the title — bindBuy would stamp "?" over it.
+		UiRefs.bindButton(shield :: GuiButton, function()
+			if starterId == 0 then
+				UiRefs.notify(NOT_ON_SALE, 3)
+				return
+			end
+			local prompted = pcall(function()
+				MarketplaceService:PromptProductPurchase(player, starterId)
+			end)
+			if not prompted then
+				UiRefs.notify(PROMPT_FAILED, 3)
+			end
+		end)
 		local function refreshShield()
 			(shield :: GuiButton).Visible = player:GetAttribute("StarterPackOwned") ~= true
 		end

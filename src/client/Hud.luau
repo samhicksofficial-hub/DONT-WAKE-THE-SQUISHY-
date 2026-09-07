@@ -5,7 +5,7 @@
 --   Labels.Money   the Money attribute, count-up tweened, with a pop on gain
 --   Labels.Offline repurposed as the live income rate ("$1.2k/s")
 --   Drop           visible only while carrying; fires Remotes.Drop
---   Right.Random   hidden while its Robux product id is parked
+--   Right.Random   the starter pack's shield button — ShopUi owns it
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -260,11 +260,11 @@ function Hud.Start()
 	player:GetAttributeChangedSignal("Carrying"):Connect(updateDrop)
 	updateDrop()
 
-	-- --------------------------------------------------------- random button --
+	-- --------------------------------------------------------- shield button --
 
-	-- Parked: the Robux developer product does not exist yet (DESIGN.md,
-	-- Monetization). No id, no button.
-	refs.random.Visible = false
+	-- Not hidden here any more: the pack's spare Right.Random button is the
+	-- starter pack's storefront, and ShopUi owns its text, price and
+	-- visibility (it goes for good once the pack is owned).
 end
 
 return Hud
