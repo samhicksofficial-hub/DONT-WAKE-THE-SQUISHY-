@@ -98,16 +98,24 @@ local function buildBoard(map: any): { TextLabel }
 		gui.Adornee = panel
 		gui.Parent = panel
 
+		-- The labels live in their OWN container: the rim below must sit
+		-- beside the list, never in it — a full-size frame joining a
+		-- UIListLayout shoves the real lines clean off the board.
+		local lines = Instance.new("Frame")
+		lines.Name = "Lines"
+		lines.Size = UDim2.fromScale(1, 1)
+		lines.BackgroundTransparency = 1
+		lines.Parent = gui
+
 		local layout = Instance.new("UIListLayout")
 		layout.FillDirection = Enum.FillDirection.Vertical
 		layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		layout.VerticalAlignment = Enum.VerticalAlignment.Center
 		layout.Padding = UDim.new(0.02, 0)
-		layout.Parent = gui
+		layout.Parent = lines
 
 		-- The black rim the mapper gave the special board, worn here too so
-		-- the two boards read as a set. A transparent frame carries the
-		-- stroke; UIStroke draws the outline regardless.
+		-- the two boards read as a set.
 		local rim = Instance.new("Frame")
 		rim.Name = "Rim"
 		rim.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -132,7 +140,7 @@ local function buildBoard(map: any): { TextLabel }
 			label.TextStrokeTransparency = 0
 			label.TextStrokeColor3 = Color3.new(0, 0, 0)
 			label.Text = ("Guaranteed %s in --:--"):format(cfg.name)
-			label.Parent = gui
+			label.Parent = lines
 			table.insert(labels, label)
 		end
 	end
