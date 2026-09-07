@@ -34,6 +34,7 @@ services.SquishyService = require(script.SquishyService) :: any
 services.EnemyService = require(script.EnemyService) :: any
 services.SpawnService = require(script.SpawnService) :: any
 services.EventService = require(script.EventService) :: any
+services.SpecialEventService = require(script.SpecialEventService) :: any
 services.DailyService = require(script.DailyService) :: any
 services.ShopService = require(script.ShopService) :: any
 services.GearService = require(script.GearService) :: any
@@ -64,6 +65,8 @@ for _, name in {
 	-- Last: it moves arriving characters onto the base PlotService just built.
 	"SpawnService",
 	"EventService",
+	-- After SquishyService: its events re-dress the field through it.
+	"SpecialEventService",
 	"DailyService",
 	-- Owns the game's single ProcessReceipt; StealService registers into it,
 	-- so the router must be standing first.

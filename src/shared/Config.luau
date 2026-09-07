@@ -352,6 +352,29 @@ Config.Events = {
 	{ name = "Mythic",    rarity = "Mythical",  interval = 900, color = Color3.fromRGB(240, 95, 150) },
 }
 
+-- The world-changing SPECIAL events, advertised on their own bigger board
+-- floating above the wall (SpecialEventService). One fires every
+-- IntervalSeconds, chosen at random and named on the board ahead of time; for
+-- DurationSeconds every fresh field squishy wears the event's variant coat —
+-- the field is re-dressed on the spot when it starts and again when it ends.
+-- Carried squishies and everything placed on plots are left alone: those are
+-- somebody's property.
+Config.SpecialEvents = {
+	IntervalSeconds = 7200, -- one every two hours of server time
+	DurationSeconds = 300,  -- five minutes of changed world
+	Events = {
+		{ name = "Zombie Apocalypse", variant = "Undead", color = Color3.fromRGB(146, 196, 120) },
+		{ name = "Snow Storm",        variant = "Frozen", color = Color3.fromRGB(178, 226, 248) },
+	},
+	-- Bigger than the rarity board and higher: it floats clear above the wall
+	-- (the rarity board's top is at 35).
+	Board = {
+		Height = 43,
+		Size = Vector2.new(84, 14),
+		Offset = Vector3.new(0, 0, -0.62),
+	},
+}
+
 -- Where the countdown board stands and how big it is.
 Config.EventBoard = {
 	Height = 26,       -- board centre above the ground

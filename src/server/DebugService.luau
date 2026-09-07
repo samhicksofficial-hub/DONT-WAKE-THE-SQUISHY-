@@ -356,6 +356,23 @@ commands.wipe = function(player, _payload)
 	return true, "progress wiped — save deleted, session reset (index panel empties on rejoin)"
 end
 
+-- Drives the special events. payload.index picks one (1..N, random when nil),
+-- payload.duration shortens it for testing; payload.countdown instead pushes
+-- the next natural landing to that many seconds out.
+commands.special = function(_player, payload)
+	local special = service("SpecialEventService")
+	if special == nil then
+		return false, "no SpecialEventService"
+	end
+	local countdown = tonumber(payload.countdown)
+	if countdown ~= nil then
+		special.SetCountdown(countdown)
+		return true, ("next special event lands in %ds"):format(countdown)
+	end
+	local ok = special.Trigger(tonumber(payload.index), tonumber(payload.duration))
+	return ok == true, if ok == true then "special event fired" else "no such event"
+end
+
 -- Fires a server-wide boost without a receipt, so both can be play-tested
 -- while their product ids are still parked at 0. payload.what: "sleep" or
 -- "luck".

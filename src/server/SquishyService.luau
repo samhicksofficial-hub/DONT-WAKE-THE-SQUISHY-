@@ -350,6 +350,13 @@ local function luckyRoll(entries: { any }): any
 	return if picked ~= nil then picked.entry else nil
 end
 
+-- --------------------------------------------------------- special events --
+-- While a special event runs (SpecialEventService), every FRESH field spawn
+-- wears its variant coat. Declared here, well before trySpawn, so trySpawn
+-- captures it as an upvalue; the switch itself (SetFieldVariant) lives below
+-- trySpawn for the same reason in the other direction.
+local eventVariant: string? = nil
+
 -- A rebuy extends from the current expiry, the way every timed purchase here
 -- stacks.
 function SquishyService.LuckBoost(minutes: number)
@@ -426,8 +433,12 @@ local function trySpawn(forcedRarity: string?, ignoreCap: boolean?, forcedVarian
 	-- Variant is rolled independently of which squishy came up, so any squishy
 	-- can turn up Gold or Rainbow — unless a caller named one, which is how the
 	-- dev panel puts a chosen coat in the field to look at.
+	-- Explicit force first (the dev panel), then the running special event's
+	-- coat, then the ordinary (luck-tempered) roll.
 	local variant = if forcedVariant ~= nil and Config.VariantByName[forcedVariant] ~= nil
 		then Config.VariantByName[forcedVariant] :: any
+		elseif eventVariant ~= nil and Config.VariantByName[eventVariant] ~= nil
+		then Config.VariantByName[eventVariant] :: any
 		else luckyRoll(Config.Variants) :: any
 
 	local model = SquishyFactory.create(def.name, variant.name)
@@ -452,6 +463,38 @@ end
 -- Forces one squishy of `rarityName` into the field, ignoring the spawn cap.
 -- EventService calls this when a guaranteed-rarity countdown lands, with no
 -- variant, so the coat still rolls. The dev panel names one.
+-- The special events' world switch. `variantName` makes every fresh field
+-- spawn wear that coat AND re-dresses the standing field on the spot: every
+-- uncarried fresh squishy is despawned and replaced one for one, so the whole
+-- map turns at once. nil turns the world back the same way. Carried squishies
+-- and plot squishies are somebody's property and are left alone.
+function SquishyService.SetFieldVariant(variantName: string?)
+	if variantName ~= nil and Config.VariantByName[variantName] == nil then
+		warn(("[SquishyService] no variant named %q; the field stays as it is"):format(tostring(variantName)))
+		return
+	end
+	eventVariant = variantName
+
+	-- Snapshot first: releasing mutates the registry being walked.
+	local standing: { Model } = {}
+	for model in fieldSpawnIndex do
+		table.insert(standing, model)
+	end
+	local replaced = 0
+	for _, model in standing do
+		local ok = pcall(function()
+			releaseFieldSpawn(model)
+			model:Destroy()
+		end)
+		if ok then
+			replaced += 1
+		end
+	end
+	for _ = 1, replaced do
+		pcall(trySpawn, nil, false, nil)
+	end
+end
+
 function SquishyService.SpawnRarity(rarityName: string, variantName: string?): Model?
 	local ok, model = pcall(trySpawn, rarityName, true, variantName)
 	if not ok then
