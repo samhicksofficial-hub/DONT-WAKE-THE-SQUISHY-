@@ -228,11 +228,13 @@ local PAD_LABEL_LIFT = 4.4
 local function dressPad(pad: BasePart, title: string, productId: number, onTouch: (Player) -> ())
 	local anchor = Instance.new("Attachment")
 	anchor.Name = "LabelAnchor"
-	-- Parent FIRST: WorldPosition on an orphan attachment has no frame to be
-	-- world-relative to, so the value would be re-read as a local offset the
-	-- moment it gained a rotated parent, and land the label across the map.
+	-- The local offset is computed by hand rather than through WorldPosition,
+	-- because WorldPosition only means "world" for an attachment already under
+	-- the Workspace — measured: on a pad whose model was still detached, the
+	-- setter stored the raw world coordinates as the LOCAL offset and hung the
+	-- label a hundred studs away. Plain frame maths has no such moods.
+	anchor.Position = pad.CFrame:VectorToObjectSpace(Vector3.new(0, PAD_LABEL_LIFT, 0))
 	anchor.Parent = pad
-	anchor.WorldPosition = pad.Position + Vector3.new(0, PAD_LABEL_LIFT, 0)
 
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "PadGui"
