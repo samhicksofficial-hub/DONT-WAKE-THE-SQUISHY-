@@ -89,6 +89,19 @@ local function buildBoard(map: any): ()
 		gui.Adornee = panel
 		gui.Parent = panel
 
+		-- The black rim, same as the mapper drew by hand on the saved board.
+		local rim = Instance.new("Frame")
+		rim.Name = "Rim"
+		rim.AnchorPoint = Vector2.new(0.5, 0.5)
+		rim.Position = UDim2.fromScale(0.5, 0.5)
+		rim.Size = UDim2.fromScale(1, 1)
+		rim.BackgroundTransparency = 1
+		rim.Parent = gui
+		local rimStroke = Instance.new("UIStroke")
+		rimStroke.Thickness = 6
+		rimStroke.Color = Color3.fromRGB(25, 26, 31)
+		rimStroke.Parent = rim
+
 		local label = Instance.new("TextLabel")
 		label.Name = LABEL_NAME
 		label.BackgroundTransparency = 1

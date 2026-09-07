@@ -105,6 +105,21 @@ local function buildBoard(map: any): { TextLabel }
 		layout.Padding = UDim.new(0.02, 0)
 		layout.Parent = gui
 
+		-- The black rim the mapper gave the special board, worn here too so
+		-- the two boards read as a set. A transparent frame carries the
+		-- stroke; UIStroke draws the outline regardless.
+		local rim = Instance.new("Frame")
+		rim.Name = "Rim"
+		rim.AnchorPoint = Vector2.new(0.5, 0.5)
+		rim.Position = UDim2.fromScale(0.5, 0.5)
+		rim.Size = UDim2.fromScale(1, 1)
+		rim.BackgroundTransparency = 1
+		rim.Parent = gui
+		local rimStroke = Instance.new("UIStroke")
+		rimStroke.Thickness = 6
+		rimStroke.Color = Color3.fromRGB(25, 26, 31)
+		rimStroke.Parent = rim
+
 		for index, cfg in Config.Events :: { any } do
 			local label = Instance.new("TextLabel")
 			label.Name = ("Event%d"):format(index)
