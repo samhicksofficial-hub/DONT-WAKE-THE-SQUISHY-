@@ -19,7 +19,7 @@ client hides that button, so nothing looks broken in the meantime.
 | `StarterPack` | Small cash + a squishy or two, cheap | Shop panel, first card |
 | `ProPack` | Bigger cash + rarer squishies | Shop panel, second card |
 | `ItemsOnly` | Squishies, no cash | Shop panel |
-| `CashOnly` | Cash bundle | Shop panel |
+| `CashOnly` | Cash bundles, five tiers: $50k / $500k / $5M / $5B (R$1000) / $50B (R$2599) | Shop panel |
 | `Random` | One random squishy dropped on your base | HUD, right-hand "Random" button |
 | `WheelSpins3` | +3 wheel spins | Wheel panel, first Robux button |
 | `WheelSpins9` | +9 wheel spins | Wheel panel, second Robux button |

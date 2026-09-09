@@ -447,9 +447,11 @@ Config.Wheel = {
 Config.Products = {
 	StarterPack = 0, -- one-time bundle: cash + a guaranteed squishy + spins
 	Boost2x = 0,     -- double income for Shop.Boost2xMinutes
-	CashSmall = 0,   -- the three cash bundles (amounts in Config.Shop)
+	CashSmall = 0,   -- the five cash bundles (amounts in Config.Shop)
 	CashMedium = 0,
 	CashLarge = 0,
+	CashHuge = 0,    -- $5B, priced R$1000 in the Dashboard
+	CashMega = 0,    -- $50B, priced R$2599 in the Dashboard
 	WheelSpins3 = 0,
 	WheelSpins9 = 0,
 	-- Pay Robux to take a squishy off another player's plot (level and variant
@@ -557,7 +559,7 @@ Config.Shop = {
 	Boost2xMult = 2,
 	VipIncomeMult = 1.5,
 	PermanentSpeedBonus = 6, -- studs/s on top of the base walkspeed
-	CashAmounts = { Small = 50e3, Medium = 500e3, Large = 5e6 },
+	CashAmounts = { Small = 50e3, Medium = 500e3, Large = 5e6, Huge = 5e9, Mega = 50e9 },
 }
 
 Config.Plot = {

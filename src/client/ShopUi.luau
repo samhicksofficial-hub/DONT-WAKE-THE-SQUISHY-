@@ -258,12 +258,31 @@ function ShopUi.Start()
 	if bundles ~= nil then
 		local receive = liftReceive(bundles)
 		if receive ~= nil then
-			for _, tier in {
+			-- The pack ships three tiles; the $5B and $50B tiers ride on clones
+			-- of the last one so they inherit its art, and the row's own
+			-- UIListLayout squeezes all five in. LayoutOrder pins the order —
+			-- the authored tiles all sit at 0 and a clone would sort among
+			-- them, not after them.
+			local template = receive:FindFirstChild("Cash3")
+			for extra, name in { "Cash4", "Cash5" } do
+				if template ~= nil and receive:FindFirstChild(name) == nil then
+					local tile = template:Clone()
+					tile.Name = name
+					tile.LayoutOrder = 3 + extra
+					tile.Parent = receive
+				end
+			end
+			for order, tier in {
 				{ "Cash1", "CashSmall", shop.CashAmounts.Small },
 				{ "Cash2", "CashMedium", shop.CashAmounts.Medium },
 				{ "Cash3", "CashLarge", shop.CashAmounts.Large },
+				{ "Cash4", "CashHuge", shop.CashAmounts.Huge },
+				{ "Cash5", "CashMega", shop.CashAmounts.Mega },
 			} do
 				local tile = receive:FindFirstChild(tier[1] :: string)
+				if tile ~= nil and tile:IsA("GuiObject") then
+					tile.LayoutOrder = order
+				end
 				setText(tile, "Amount", "+" .. Util.formatMoney(tier[3] :: number))
 				bindBuy(
 					if tile ~= nil then tile:FindFirstChild("Buy") else nil,

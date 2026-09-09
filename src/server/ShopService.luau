@@ -214,7 +214,7 @@ function ShopService.Start(services: any, _map: any)
 		grantBoost(buyer, shop.Boost2xMinutes)
 		return true
 	end)
-	for sizeName, productKey in { Small = "CashSmall", Medium = "CashMedium", Large = "CashLarge" } do
+	for sizeName, productKey in { Small = "CashSmall", Medium = "CashMedium", Large = "CashLarge", Huge = "CashHuge", Mega = "CashMega" } do
 		local amount = tonumber(shop.CashAmounts[sizeName]) or 0
 		ShopService.RegisterProductHandler(tonumber(products[productKey]) or 0, function(_receipt, buyer)
 			grantCash(buyer, amount)
