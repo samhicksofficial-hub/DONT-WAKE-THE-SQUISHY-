@@ -25,9 +25,7 @@ client hides that button, so nothing looks broken in the meantime.
 | `WheelSpins9` | +9 wheel spins | Wheel panel, second Robux button |
 | `CarryUpgrade` | Instantly buy the next Carry level | Upgrades panel, Carry card |
 | `RebirthSkip` | Skip the cash cost of the next rebirth | Rebirth panel, "Skip" button |
-
-(Stealing is free gameplay now — the "Steal" prompt on other players' placed
-squishies needs no product. Base Lock is the paid defence against it.)
+| `Steal` | Take one squishy off another player's plot, keeping its level and variant (Base Lock blocks it) | "Steal" prompt on other players' placed squishies |
 
 ## 2. Game Passes — one-time perks
 Create at **Monetization → Passes**. These need a `Config.Passes` table (I'll add
