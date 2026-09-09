@@ -2007,6 +2007,26 @@ local function accruePlot(plot: PlotRecord, elapsed: number)
 	end
 end
 
+-- The effective $/s, published as the owner's `IncomeRate` attribute for the
+-- HUD: raw slot income summed, then scaled by the same multiplier chain a
+-- collect actually pays through (EconomyService.PreviewIncome — rebirth, 2x
+-- boost, VIP). The client used to re-derive this from model attributes and
+-- went stale the moment a squishy levelled up; publishing from the accrual
+-- tick keeps the number exactly what the pads deliver. An attribute write
+-- only replicates on change, so the steady state costs nothing.
+local function publishIncomeRate(plot: PlotRecord)
+	local raw = PlotService.GetIncomeRate(plot.player)
+	local effective = raw
+	local economy = if servicesRef ~= nil then servicesRef.EconomyService else nil
+	if economy ~= nil and typeof(economy.PreviewIncome) == "function" then
+		local ok, scaled = pcall(economy.PreviewIncome, plot.player, raw)
+		if ok and typeof(scaled) == "number" then
+			effective = scaled
+		end
+	end
+	plot.player:SetAttribute("IncomeRate", effective)
+end
+
 -- -------------------------------------------------------------------- public --
 
 function PlotService.Start(services: any, map: any)
@@ -2040,6 +2060,10 @@ function PlotService.Start(services: any, map: any)
 				local ok, err = pcall(accruePlot, plot, elapsed)
 				if not ok then
 					warn(("[PlotService] accrual failed for %s: %s"):format(plot.player.Name, tostring(err)))
+				end
+				local okRate, rateErr = pcall(publishIncomeRate, plot)
+				if not okRate then
+					warn(("[PlotService] income publish failed for %s: %s"):format(plot.player.Name, tostring(rateErr)))
 				end
 			end
 		end

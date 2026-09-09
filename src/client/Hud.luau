@@ -11,37 +11,19 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local Workspace = game:GetService("Workspace")
 
 local UiRefs = require(script.Parent.UiRefs)
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Util = require(Shared:WaitForChild("Util"))
-local Config = require(Shared:WaitForChild("Config"))
 
 local COUNT_DURATION = 0.3 -- seconds for the money count-up lerp
 local POP_DURATION = 0.12
 local POP_SCALE = 1.12
-local INCOME_DEBOUNCE = 0.2 -- seconds to settle after plot tree churn
 
 local Hud = {}
 
 local function readMoney(player: Player): number
 	local raw = player:GetAttribute("Money")
-	if typeof(raw) == "number" then
-		return raw :: number
-	end
-	return 0
-end
-
--- $/s contributed by one instance: only placed squishy models count.
-local function placedIncome(instance: Instance): number
-	if not instance:IsA("Model") then
-		return 0
-	end
-	if instance:GetAttribute("State") ~= "Placed" then
-		return 0
-	end
-	local raw = instance:GetAttribute("Income")
 	if typeof(raw) == "number" then
 		return raw :: number
 	end
@@ -165,35 +147,13 @@ function Hud.Start()
 
 	-- --------------------------------------------------------- income rate --
 
-	-- Sum of the Income attribute over the player's own placed squishies.
-	-- PlotService names each plot model after its owner and parents placed
-	-- squishies (State = "Placed") inside it.
-	local function computeIncome(): number
-		local plotFolder = Workspace:FindFirstChild("Plots")
-		if plotFolder == nil then
-			return 0
-		end
-		local plot = plotFolder:FindFirstChild(player.Name)
-		if plot == nil then
-			return 0
-		end
-		local total = 0
-		for _, descendant in plot:GetDescendants() do
-			local ok, income = pcall(placedIncome, descendant)
-			if ok and typeof(income) == "number" then
-				total += income :: number
-			end
-		end
-		-- EconomyService multiplies every payout by the rebirth multiplier, so
-		-- the displayed rate has to match what the pads will actually pay.
-		local rebirths = tonumber(player:GetAttribute("Rebirths")) or 0
-		local tiers = Config.Rebirth.Multipliers
-		local multiplier = tiers[math.clamp(math.floor(rebirths) + 1, 1, #tiers)] or 1
-		return total * multiplier
-	end
-
+	-- The server publishes the effective rate as the `IncomeRate` attribute
+	-- (PlotService, every accrual tick): raw slot income scaled by the same
+	-- multipliers a collect pays with. This label used to re-derive the number
+	-- by walking the plot tree, and went stale the moment a squishy levelled
+	-- up — an attribute changing under a model the walk never re-read.
 	local function refreshIncome()
-		local total = computeIncome()
+		local total = tonumber(player:GetAttribute("IncomeRate")) or 0
 		if total <= 0 then
 			incomeLabel.Visible = false
 			return
@@ -203,32 +163,8 @@ function Hud.Start()
 	end
 
 	incomeLabel.Visible = false
-
-	local incomeQueued = false
-	local function queueIncome()
-		if incomeQueued then
-			return
-		end
-		incomeQueued = true
-		task.delay(INCOME_DEBOUNCE, function()
-			incomeQueued = false
-			local ok, err = pcall(refreshIncome)
-			if not ok then
-				warn(("[Hud] income refresh failed: %s"):format(tostring(err)))
-			end
-		end)
-	end
-
-	-- Spawned: Plots only appears once the server's MapBuilder has run.
-	task.spawn(function()
-		local plotFolder = Workspace:WaitForChild("Plots")
-		plotFolder.DescendantAdded:Connect(queueIncome)
-		plotFolder.DescendantRemoving:Connect(queueIncome)
-		queueIncome()
-	end)
-
-	-- A rebirth changes the rate without touching the plot tree.
-	player:GetAttributeChangedSignal("Rebirths"):Connect(queueIncome)
+	player:GetAttributeChangedSignal("IncomeRate"):Connect(refreshIncome)
+	refreshIncome()
 
 	-- ----------------------------------------------------------- drop button --
 
