@@ -270,13 +270,21 @@ function GearService.PromptPurchase(player: Player, gear: any)
 end
 
 function GearService.Start(_services: any, _map: any)
-	Players.PlayerAdded:Connect(function(player)
+	local function watchPlayer(player: Player)
 		task.spawn(applyDefaults, player)
 		task.spawn(applyOwned, player)
-	end)
+		-- Every respawn rebuilds the Backpack from StarterPack + StarterGear.
+		-- If the StarterGear copy was ever missed (it did not exist yet on a
+		-- very early join), each later spawn would come up empty-handed — so
+		-- re-hand the kit per character. handTool deduplicates by name, so a
+		-- spawn that already got its copy from StarterGear gains nothing.
+		player.CharacterAdded:Connect(function()
+			task.defer(applyDefaults, player)
+		end)
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
 	for _, player in Players:GetPlayers() do
-		task.spawn(applyDefaults, player)
-		task.spawn(applyOwned, player)
+		watchPlayer(player)
 	end
 
 	Players.PlayerRemoving:Connect(function(player)
