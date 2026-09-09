@@ -452,9 +452,6 @@ Config.Products = {
 	CashLarge = 0,
 	WheelSpins3 = 0,
 	WheelSpins9 = 0,
-	-- Pay Robux to take a squishy off another player's plot. Stealing stays
-	-- switched off until this id exists.
-	Steal = 0,
 	-- The two defence pads at a plot's front door (DefenseService). Parked at
 	-- 0 like everything else: the pads say "Coming soon" and prompt nothing.
 	SlapProtection = 0,

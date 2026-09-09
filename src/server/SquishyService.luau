@@ -511,6 +511,10 @@ function SquishyService.TakeCarriedDef(player: Player): any
 		return nil
 	end
 	carrying[player] = nil
+	-- Read before the destroy: a stolen squishy's upgrade level rides the
+	-- model's Level attribute (set by GiveCarried, kept through any drop and
+	-- re-pickup along the way home).
+	local level = tonumber(entry.model:GetAttribute("Level"))
 	pcall(function()
 		entry.model:Destroy()
 	end)
@@ -519,6 +523,9 @@ function SquishyService.TakeCarriedDef(player: Player): any
 	-- Gold/Rainbow coat (and its income multiplier) after deposit.
 	local carried = table.clone(entry.def)
 	carried.variant = entry.variant
+	if level ~= nil and level > 1 then
+		carried.level = level
+	end
 	return carried
 end
 
@@ -656,6 +663,14 @@ function SquishyService.Start(services: any, map: any)
 				pcall(applySpeed, player)
 			end)
 		end
+		-- A landed slap knocks whatever this player was carrying out of their
+		-- hands — the counter to a thief mid-getaway. The slap tool's server
+		-- script stamps LastSlappedAt after its own protection checks; the
+		-- fling is the tool's job, the drop is ours because this module owns
+		-- the carry lifecycle. ForceDrop is a no-op for empty hands.
+		player:GetAttributeChangedSignal("LastSlappedAt"):Connect(function()
+			pcall(SquishyService.ForceDrop, player)
+		end)
 		local existing = player.Character
 		if existing ~= nil then
 			task.spawn(onCharacterAdded, player, existing)
@@ -697,12 +712,14 @@ function SquishyService.Start(services: any, map: any)
 	end)
 end
 
--- ------------------------------------------------------------------- debug --
--- Entry point for DebugService (Studio only): puts a named squishy straight
--- into a player hands, skipping the field spawn and the pickup prompt. It runs
--- the real pickup path, so carry speed, the alert radius and discovery all
--- behave exactly as they would after lifting one off the grass.
-function SquishyService.GiveCarried(player: Player, squishyName: string, variantName: string?): boolean
+-- Puts a named squishy straight into a player's hands, skipping the field
+-- spawn and the pickup prompt. It runs the real pickup path, so carry speed,
+-- the alert radius and discovery all behave exactly as they would after
+-- lifting one off the grass. The dev panel calls it bare; StealService passes
+-- `level` so a stolen squishy keeps its upgrades through the carry — the
+-- level rides the model's Level attribute, which survives a mid-chase drop
+-- and a re-pickup, and TakeCarriedDef reads it back at deposit.
+function SquishyService.GiveCarried(player: Player, squishyName: string, variantName: string?, level: number?): boolean
 	if carrying[player] ~= nil then
 		return false
 	end
@@ -711,8 +728,12 @@ function SquishyService.GiveCarried(player: Player, squishyName: string, variant
 	end
 	local created, model = pcall(SquishyFactory.create, squishyName, variantName)
 	if not created or model == nil then
-		warn(("[SquishyService] debug give could not build %s: %s"):format(squishyName, tostring(model)))
+		warn(("[SquishyService] give could not build %s: %s"):format(squishyName, tostring(model)))
 		return false
+	end
+	local carriedLevel = math.floor(tonumber(level) or 1)
+	if carriedLevel > 1 then
+		model:SetAttribute("Level", carriedLevel)
 	end
 	-- onPickup refuses anything that is not sitting in the field folder.
 	model.Parent = mapRef.squishyFolder
@@ -721,7 +742,7 @@ function SquishyService.GiveCarried(player: Player, squishyName: string, variant
 	bindPickup(model)
 	local ok, err = pcall(onPickup, player, model)
 	if not ok then
-		warn(("[SquishyService] debug give failed: %s"):format(tostring(err)))
+		warn(("[SquishyService] give failed: %s"):format(tostring(err)))
 	end
 	-- Anything that stopped the pickup short leaves a loose model in the field.
 	if carrying[player] == nil then

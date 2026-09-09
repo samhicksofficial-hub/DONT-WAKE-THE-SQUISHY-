@@ -324,10 +324,12 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 
 ## Monetization (ids parked — needs the user's Creator Dashboard)
 The Shop sells developer products (Config.Products: starter pack, 2x cash boost,
-three cash bundles, wheel spins, Steal) and game passes (Config.Passes: VIP,
+three cash bundles, wheel spins) and game passes (Config.Passes: VIP,
 PermanentSpeed); what each grants is tuned in Config.Shop. ShopService owns the
 game's ONE MarketplaceService.ProcessReceipt and routes receipts by id -
-anything else selling a product registers a handler with it (StealService does).
+anything else selling a product registers a handler with it. (Stealing is FREE
+gameplay: StealService's prompt hands the thief a carry — level and variant
+riding along — and the counterplay is the slap and the paid Base Lock.)
 Grants land as player attributes: VipActive and BoostUntil (EconomyService
 multiplies income at its choke point), PermSpeedBonus (SquishyService adds it to
 walkspeed). While an id is 0 the card shows GREYED and un-buyable; no code

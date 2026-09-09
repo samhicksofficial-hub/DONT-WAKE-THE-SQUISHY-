@@ -1215,6 +1215,15 @@ local function onPlacePrompt(plot: PlotRecord, slot: SlotRecord, player: Player)
 	local ok, err = pcall(placeSquishy, plot, slot, def)
 	if not ok then
 		warn(("[PlotService] failed to place squishy for %s: %s"):format(player.Name, tostring(err)))
+		return
+	end
+	-- A stolen squishy lands at the level it was taken at (TakeCarriedDef
+	-- forwards it on the def); everything else places at level 1 as before.
+	local level = math.floor(tonumber(def.level) or 1)
+	if level > 1 then
+		slot.level = level
+		refreshSlotLevel(plot, slot)
+		updateCollectLabel(plot, slot)
 	end
 end
 
@@ -2120,9 +2129,6 @@ function PlotService.GetSpawnCFrame(player: Player): CFrame?
 	return point.CFrame
 end
 
--- Drops a squishy straight onto a free slot without the player carrying it
--- home — how the wheel delivers a squishy prize. Returns false when the player
--- has no plot or no free unlocked slot (the caller then pays out instead).
 -- Everything StealService needs to describe one placed squishy: who owns it,
 -- which slot it sits in, and what it is worth right now.
 function PlotService.DescribePlaced(model: Model): any?
@@ -2144,50 +2150,25 @@ function PlotService.DescribePlaced(model: Model): any?
 	return nil
 end
 
--- Moves a placed squishy from its owner's plot to `thief`'s, keeping its level
--- and variant. Fails (changing nothing) if the thief has no free slot, so a
--- paid steal never destroys the goods without delivering them.
-function PlotService.StealSquishy(model: Model, thief: Player): boolean
-	local info = PlotService.DescribePlaced(model)
-	if info == nil or info.owner == thief then
-		return false
+-- Removes a placed squishy from whichever slot holds it — the second half of a
+-- free steal: StealService hands the thief their carry copy FIRST, then this
+-- clears the victim's shelf (the squishy, its pending cash and its pad).
+-- Returns false when the model is not a placed squishy any more.
+function PlotService.ClearPlaced(model: Model): boolean
+	for _, plot in plots do
+		for _, slot in plot.slots do
+			if slot.occupied and slot.squishy == model then
+				clearSlot(plot, slot)
+				return true
+			end
+		end
 	end
-	local thiefPlot = plots[thief]
-	if thiefPlot == nil then
-		return false
-	end
-	local target = findFreeSlot(thiefPlot)
-	if target == nil then
-		return false
-	end
-
-	local victimPlot = plots[info.owner]
-	local victimSlot = victimPlot ~= nil and victimPlot.slots[info.slotIndex] or nil
-	if victimSlot == nil then
-		return false
-	end
-
-	local def = Config.SquishyByName[info.squishyName]
-	if def == nil then
-		return false
-	end
-	local defCopy = table.clone(def)
-	defCopy.variant = info.variant
-
-	-- Place it on the thief's plot FIRST; only clear the victim once it landed.
-	local ok = pcall(placeSquishy, thiefPlot, target, defCopy)
-	if not ok then
-		return false
-	end
-	target.level = info.level or 1
-	refreshSlotLevel(thiefPlot, target)
-	updateCollectLabel(thiefPlot, target)
-
-	-- Clear the victim's slot: the squishy, its pending cash and its pad.
-	clearSlot(victimPlot, victimSlot)
-	return true
+	return false
 end
 
+-- Drops a squishy straight onto a free slot without the player carrying it
+-- home — how the wheel delivers a squishy prize. Returns false when the player
+-- has no plot or no free unlocked slot (the caller then pays out instead).
 function PlotService.TryPlaceSquishy(player: Player, def: any): boolean
 	if def == nil then
 		return false
