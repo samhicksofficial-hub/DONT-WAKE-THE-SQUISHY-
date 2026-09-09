@@ -12,32 +12,37 @@ into `src/shared/Config.luau`) and the matching feature turns itself on.
 ## 1. Developer Products — repeatable purchases
 Create at **Creator Dashboard → your experience → Monetization → Developer Products**.
 IDs go in `Config.Products` (`src/shared/Config.luau`). While an ID is `0` the
-client hides that button, so nothing looks broken in the meantime.
+shop card greys out (or the prompt hides), so nothing looks broken meanwhile.
+The Robux price is set on the Dashboard, never in code — a ✓ price is one the
+owner has decided; the rest are suggestions to tweak at creation time.
 
-| Config key | What it should sell | Where it shows up |
+| Config key | What it sells | Price |
 |---|---|---|
-| `StarterPack` | Small cash + a squishy or two, cheap | Shop panel, first card |
-| `ProPack` | Bigger cash + rarer squishies | Shop panel, second card |
-| `ItemsOnly` | Squishies, no cash | Shop panel |
-| `CashOnly` | Cash bundles, five tiers: $50k / $500k / $5M / $5B (R$1000) / $50B (R$2599) | Shop panel |
-| `Random` | One random squishy dropped on your base | HUD, right-hand "Random" button |
-| `WheelSpins3` | +3 wheel spins | Wheel panel, first Robux button |
-| `WheelSpins9` | +9 wheel spins | Wheel panel, second Robux button |
-| `CarryUpgrade` | Instantly buy the next Carry level | Upgrades panel, Carry card |
-| `RebirthSkip` | Skip the cash cost of the next rebirth | Rebirth panel, "Skip" button |
-| `Steal` | Take one squishy off another player's plot, keeping its level and variant (Base Lock blocks it) | "Steal" prompt on other players' placed squishies |
+| `StarterPack` | one-time: $100k + Gold Epic + 5 spins | R$9 ✓ |
+| `SleepAll` | every Evil Squishy sleeps 60s (right-side button) | R$9 ✓ |
+| `ServerLuck` | 15 min rarer spawns, whole server | R$249 ✓ |
+| `SlapProtection` | 15 min slap immunity, front-door pad | R$49 |
+| `BaseLock` | 15 min laser wall, front-door pad | R$49 |
+| `Steal` | take one squishy off another player's plot, level and variant intact (Base Lock blocks it) | R$25 |
+| `Boost2x` | 30 min double income | R$19 |
+| `CashSmall` / `CashMedium` / `CashLarge` | $50k / $500k / $5M | R$9 / R$29 / R$79 |
+| `CashHuge` / `CashMega` | $5B / $50B | R$1000 ✓ / R$2599 ✓ |
+| `WheelSpins3` / `WheelSpins9` | +3 / +9 wheel spins | R$15 / R$35 |
 
 ## 2. Game Passes — one-time perks
-Create at **Monetization → Passes**. These need a `Config.Passes` table (I'll add
-it when the IDs exist) and a little gameplay work behind each one:
+Create at **Monetization → Passes**. IDs go in `Config.Passes`; each one is
+already wired and switches on the moment its id lands.
 
-| Suggested pass | What I'd wire it to |
-|---|---|
-| Slap Protection | Giants notice you but never land a slap (reference shows this as a base-side purchase) |
-| Lock Base | Blocks other players stealing from your base — **needs the stealing feature built first** |
-| Auto Collect | Collect pads pay out on their own, no walking over them |
-| 2x Money | A permanent multiplier stacked on top of rebirths |
-| Extra Slots | Starts you with more unlocked plot slots |
+| Config key | What it grants | Price |
+|---|---|---|
+| `VIP` | 1.5x income forever | R$199 |
+| `PermanentSpeed` | +6 walkspeed forever | R$99 |
+| `SpeedCoil` | the coil, basement stand | R$49 |
+| `Glock` | Glock-17, basement stand | R$79 |
+| `Knight` | bodyguard, basement stand | R$599 ✓ |
+
+(`SlapHand` stays parked at 0 on purpose: everyone gets the slap hand free as
+default kit, so a pass for it would sell nothing.)
 
 ## 2b. Giant meshes — IMPORTED, one step left to make them permanent
 
