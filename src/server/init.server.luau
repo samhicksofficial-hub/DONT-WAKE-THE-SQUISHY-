@@ -38,6 +38,7 @@ services.SpecialEventService = require(script.SpecialEventService) :: any
 services.DailyService = require(script.DailyService) :: any
 services.ShopService = require(script.ShopService) :: any
 services.GearService = require(script.GearService) :: any
+services.KnightService = require(script.KnightService) :: any
 services.StealService = require(script.StealService) :: any
 services.DefenseService = require(script.DefenseService) :: any
 services.PortalService = require(script.PortalService) :: any
@@ -75,6 +76,9 @@ for _, name in {
 	-- table as it builds, and every entry point it calls reads only Config and
 	-- ServerStorage. Start here just wires ownership and the purchase signal.
 	"GearService",
+	-- After GearService: it reacts to the OwnsKnight attribute GearService sets,
+	-- spawning the bodyguard follower for pass owners.
+	"KnightService",
 	-- Last: it walks the finished plots to attach its prompts.
 	"StealService",
 	-- After ShopService (it registers its two products into the receipt
