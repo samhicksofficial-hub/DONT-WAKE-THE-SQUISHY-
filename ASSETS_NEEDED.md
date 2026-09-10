@@ -9,40 +9,50 @@ into `src/shared/Config.luau`) and the matching feature turns itself on.
 
 ---
 
-## 1. Developer Products — repeatable purchases
-Create at **Creator Dashboard → your experience → Monetization → Developer Products**.
-IDs go in `Config.Products` (`src/shared/Config.luau`). While an ID is `0` the
-shop card greys out (or the prompt hides), so nothing looks broken meanwhile.
-The Robux price is set on the Dashboard, never in code — a ✓ price is one the
-owner has decided; the rest are suggestions to tweak at creation time.
+## 1. Monetization — DONE (ids live in `Config`)
+All 19 developer products and passes were created on the Creator Dashboard
+under the group experience (placeId `118499294741014`) on 2026-09-11 and wired
+into `Config.Products` / `Config.Passes`. Each id was matched back to its key by
+`GetProductInfo` name lookup, not by list order. The Robux **price** lives only
+on the Dashboard — the client shows whatever `GetProductInfo` reports live, so
+re-pricing needs no code change.
 
-| Config key | What it sells | Price |
+**Developer products** (`Config.Products`):
+
+| Config key | Sells | ID |
 |---|---|---|
-| `StarterPack` | one-time: $100k + Gold Epic + 5 spins | R$9 ✓ |
-| `SleepAll` | every Evil Squishy sleeps 60s (right-side button) | R$9 ✓ |
-| `ServerLuck` | 15 min rarer spawns, whole server | R$249 ✓ |
-| `SlapProtection` | 15 min slap immunity, front-door pad | R$49 |
-| `BaseLock` | 15 min laser wall, front-door pad | R$49 |
-| `Steal` | take one squishy off another player's plot, level and variant intact (Base Lock blocks it) | R$25 |
-| `Boost2x` | 30 min double income | R$19 |
-| `CashSmall` / `CashMedium` / `CashLarge` | $50k / $500k / $5M | R$9 / R$29 / R$79 |
-| `CashHuge` / `CashMega` | $5B / $50B | R$1000 ✓ / R$2599 ✓ |
-| `WheelSpins3` / `WheelSpins9` | +3 / +9 wheel spins | R$15 / R$35 |
+| `StarterPack` | $100k + Gold Epic + 5 spins | 3712212383 |
+| `SleepAll` | every Evil Squishy sleeps 60s | 3712212440 |
+| `ServerLuck` | 15 min rarer spawns, whole server | 3712212497 |
+| `SlapProtection` | 15 min slap immunity | 3712212545 |
+| `BaseLock` | 15 min laser wall | 3712212612 |
+| `Steal` | take one squishy (Base Lock blocks it) | 3712212718 |
+| `Boost2x` | 30 min double income | 3712212745 |
+| `CashSmall` | $50k | 3712212790 |
+| `CashMedium` | $500k | 3712212830 |
+| `CashLarge` | $5M | 3712212884 |
+| `CashHuge` | $5B | 3712212953 |
+| `CashMega` | $50B | 3712213026 |
+| `WheelSpins3` | +3 spins | 3712213102 |
+| `WheelSpins9` | +9 spins | 3712213149 |
 
-## 2. Game Passes — one-time perks
-Create at **Monetization → Passes**. IDs go in `Config.Passes`; each one is
-already wired and switches on the moment its id lands.
+**Game passes** (`Config.Passes`):
 
-| Config key | What it grants | Price |
+| Config key | Grants | ID |
 |---|---|---|
-| `VIP` | 1.5x income forever | R$199 |
-| `PermanentSpeed` | +6 walkspeed forever | R$99 |
-| `SpeedCoil` | the coil, basement stand | R$49 |
-| `Glock` | Glock-17, basement stand | R$79 |
-| `Knight` | bodyguard, basement stand | R$599 ✓ |
+| `VIP` | 1.5x income forever | 1979522326 |
+| `PermanentSpeed` | +6 walkspeed forever | 1976582557 |
+| `SpeedCoil` | the coil, basement stand | 1975100605 |
+| `Glock` | the Glock gear (pass named "Block-17" on Roblox) | 1978712402 |
+| `Knight` | bodyguard, basement stand | 1976768555 |
 
-(`SlapHand` stays parked at 0 on purpose: everyone gets the slap hand free as
-default kit, so a pass for it would sell nothing.)
+`SlapHand` stays parked at `0` on purpose: everyone gets the slap hand free as
+default kit, so a pass for it would sell nothing.
+
+**Price note (2026-09-11):** at wiring time every live price read back ~10%
+under the targets (Knight R$540 not 599, VIP 180 not 199, $50B 2340 not 2599,
+etc.) — a consistent ×0.9. If the higher numbers were intended, adjust each on
+the Dashboard; the game will show the new price with no code change.
 
 ## 2b. Giant meshes — IMPORTED, one step left to make them permanent
 

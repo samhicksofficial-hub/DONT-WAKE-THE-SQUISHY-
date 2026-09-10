@@ -439,32 +439,33 @@ Config.Wheel = {
 	},
 }
 
--- Robux developer products (the CONSUMABLE purchases). All 0 until they are
--- created in the Creator Dashboard, so nothing here ever guesses an id: ShopUi
--- shows a card whose id is still 0 greyed with no live price, and ShopService
--- grants nothing for a receipt it has no handler for. Fill these in to switch
--- them on.
+-- Robux developer products (the CONSUMABLE purchases). Live ids from the
+-- Creator Dashboard, created under the group experience (placeId 118499294741014)
+-- on 2026-09-11 and matched back to these keys by GetProductInfo name lookup,
+-- not by list order. An id of 0 still means parked: ShopUi greys that card and
+-- ShopService grants nothing for a receipt it has no handler for. The Robux
+-- PRICE lives only on the Dashboard — the client shows whatever GetProductInfo
+-- reports live, so changing a price there needs no code change.
 Config.Products = {
-	StarterPack = 0, -- one-time bundle: cash + a guaranteed squishy + spins
-	Boost2x = 0,     -- double income for Shop.Boost2xMinutes
-	CashSmall = 0,   -- the five cash bundles (amounts in Config.Shop)
-	CashMedium = 0,
-	CashLarge = 0,
-	CashHuge = 0,    -- $5B, priced R$1000 in the Dashboard
-	CashMega = 0,    -- $50B, priced R$2599 in the Dashboard
-	WheelSpins3 = 0,
-	WheelSpins9 = 0,
+	StarterPack = 3712212383, -- one-time bundle: cash + a guaranteed squishy + spins
+	Boost2x = 3712212745,     -- double income for Shop.Boost2xMinutes
+	CashSmall = 3712212790,   -- the five cash bundles (amounts in Config.Shop)
+	CashMedium = 3712212830,
+	CashLarge = 3712212884,
+	CashHuge = 3712212953,    -- $5B
+	CashMega = 3712213026,    -- $50B
+	WheelSpins3 = 3712213102,
+	WheelSpins9 = 3712213149,
 	-- Pay Robux to take a squishy off another player's plot (level and variant
-	-- travel with it). Stealing stays switched off until this id exists.
-	Steal = 0,
-	-- The two defence pads at a plot's front door (DefenseService). Parked at
-	-- 0 like everything else: the pads say "Coming soon" and prompt nothing.
-	SlapProtection = 0,
-	BaseLock = 0,
+	-- travel with it). Base Lock refuses it at the prompt and at the receipt.
+	Steal = 3712212718,
+	-- The two defence pads at a plot's front door (DefenseService).
+	SlapProtection = 3712212545,
+	BaseLock = 3712212612,
 	-- The two SERVER-WIDE boosts on the BoostUi side buttons: everyone in the
 	-- server benefits, whoever pays.
-	SleepAll = 0,   -- every Evil Squishy sleeps for Boosts.SleepSeconds
-	ServerLuck = 0, -- rarer field spawns for Boosts.LuckMinutes
+	SleepAll = 3712212440,   -- every Evil Squishy sleeps for Boosts.SleepSeconds
+	ServerLuck = 3712212497, -- rarer field spawns for Boosts.LuckMinutes
 }
 
 -- The server-wide boosts BoostUi sells (Products.SleepAll / ServerLuck).
@@ -506,16 +507,19 @@ Config.Offline = {
 	MinimumAwaySeconds = 60,
 }
 
--- Game passes: the PERMANENT purchases. Same 0-means-parked rule.
+-- Game passes: the PERMANENT purchases. Live ids as above; 0 still parks a key.
 Config.Passes = {
-	VIP = 0,            -- permanent income multiplier (Shop.VipIncomeMult)
-	PermanentSpeed = 0, -- permanent walkspeed bonus (Shop.PermanentSpeedBonus)
-	-- The gear on the basement stands (Config.Gear). Fill these in from the
-	-- Creator Dashboard and the stands start selling with no code change.
-	SpeedCoil = 0,
+	VIP = 1979522326,            -- permanent income multiplier (Shop.VipIncomeMult)
+	PermanentSpeed = 1976582557, -- permanent walkspeed bonus (Shop.PermanentSpeedBonus)
+	-- The gear on the basement stands (Config.Gear); the stand sells the moment
+	-- its id lands. The Glock pass is named "Block-17" on Roblox — the store
+	-- moderated "Glock" out — but it is the same pass and grants the Glock gear.
+	SpeedCoil = 1975100605,
+	-- SlapHand stays 0 on purpose: everyone gets the slap hand as default kit, so
+	-- a pass for it would sell nothing (GearService hands it over regardless).
 	SlapHand = 0,
-	Glock = 0,
-	Knight = 0,
+	Glock = 1978712402,
+	Knight = 1976768555,
 }
 
 -- The gear sold from the item stands in a base's BASEMENT storeys.
