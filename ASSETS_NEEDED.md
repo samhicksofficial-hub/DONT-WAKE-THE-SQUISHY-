@@ -49,10 +49,14 @@ re-pricing needs no code change.
 `SlapHand` stays parked at `0` on purpose: everyone gets the slap hand free as
 default kit, so a pass for it would sell nothing.
 
-**Price note (2026-09-11):** at wiring time every live price read back ~10%
-under the targets (Knight R$540 not 599, VIP 180 not 199, $50B 2340 not 2599,
-etc.) — a consistent ×0.9. If the higher numbers were intended, adjust each on
-the Dashboard; the game will show the new price with no code change.
+**Price note (2026-09-11):** the base prices set on the Dashboard are the
+intended ones (Knight 599, VIP 199, $50B 2599, etc.) — no change needed.
+`GetProductInfo` returns TWO fields: `UserBasePriceInRobux` (the base, what a
+normal player pays) and `PriceInRobux` (already reduced by the 10% Roblox
+Premium discount, and returned that reduced value to EVERYONE — a no-Premium
+server reads it too). The UI must display the base, so `Util.robuxPrice` prefers
+`UserBasePriceInRobux`; every price-display site uses it. Premium members still
+get their discount applied by Roblox at the purchase prompt.
 
 ## 2b. Giant meshes — IMPORTED, one step left to make them permanent
 
