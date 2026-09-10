@@ -3,19 +3,26 @@
 --
 -- Owning the pass sets the OwnsKnight attribute (GearService.grant); this
 -- service turns that flag into an actual follower: a Knight that spawns beside
--- its owner and trails them around the map, re-spawning if it dies and
+-- its owner and trails them around the map, re-spawning if it goes missing and
 -- despawning when the owner leaves. Nothing else in the game read that
 -- attribute before, so the pass used to grant nothing visible.
 --
 -- SECURITY / BEHAVIOUR: the imported "The Knight" template is a free-model
 -- KILLER NPC ("JeffTheKiller") whose own scripts chase and attack everyone. We
 -- take only its LOOK — armour meshes, body colours, helmet, body parts — and
--- STRIP every script on clone, so none of the free model's code ever runs. The
--- bodyguard is inert except for the follow loop here. It does NOT attack: a
--- companion, not a weapon. Player-targeting combat is a deliberate non-goal
--- (it would be a griefing vector) and can be designed later if wanted.
+-- STRIP every script on clone, so none of the free model's code ever runs. It
+-- does NOT attack: a companion, not a weapon (player-targeting combat would be
+-- a griefing vector and is left out on purpose).
+--
+-- MOVEMENT: the follower is ANCHORED and driven by CFrame (a smooth lerp toward
+-- a spot beside its owner) rather than by Humanoid:MoveTo. An imported rig walks
+-- unreliably under server MoveTo — Roblox hands its physics ownership to the
+-- nearest player's client, which silently defeats server movement, and the rig
+-- trips on plot geometry. A CFrame glide is predictable on every surface. The
+-- Humanoid is kept only so the armour and body colours render.
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -24,13 +31,14 @@ local KnightService = {}
 local TEMPLATE_FOLDER = "GearItems"
 local TEMPLATE_NAME = "The Knight"
 local ATTRIBUTE = "OwnsKnight"
-local FOLLOW_GAP = 6 -- studs it tries to hold off the owner
-local FOLLOW_TICK = 0.35 -- seconds between re-targets
-local SNAP_RANGE = 90 -- if it falls this far behind, teleport it back
-local RESPAWN_DELAY = 2 -- seconds before a fallen guard returns
+-- Where it holds station relative to the owner: a bit to the right and behind
+-- (object space; -Z is the owner's forward, so +Z is behind them).
+local FOLLOW_OFFSET = CFrame.new(3, 0, 5)
+local FOLLOW_ALPHA = 0.12 -- per-frame catch-up; higher snaps faster
+local SNAP_RANGE = 60 -- fall this far behind (owner teleported) and jump to them
 
--- player -> live bodyguard model, and a per-player generation that invalidates
--- an old follow loop the instant a new guard (or a despawn) supersedes it.
+-- player -> live bodyguard model, and a per-player generation that retires an
+-- old follow connection the instant a new guard (or a despawn) supersedes it.
 local guards: { [Player]: Model } = {}
 local generation: { [Player]: number } = {}
 
@@ -40,7 +48,7 @@ local function findTemplate(): Model?
 	return if t ~= nil and t:IsA("Model") then t else nil
 end
 
--- A clone with every script stripped and a usable humanoid + root, or nil when
+-- A clone with every script stripped, anchored and non-colliding, or nil when
 -- the place carries no Knight art (a clean rojo build).
 local function buildGuard(): Model?
 	local template = findTemplate()
@@ -67,11 +75,14 @@ local function buildGuard(): Model?
 		clone:Destroy()
 		return nil
 	end
-	-- No name plate, no health bar, and it can't be shoved off the map by its
-	-- own ragdoll — it is scenery that walks.
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
-	humanoid.BreakJointsOnDeath = false
+	-- The rig is moved by CFrame, not by its Humanoid; take the state machine
+	-- out of the way so it never fights the glide or tries to "stand up".
+	humanoid.PlatformStand = true
+	pcall(function()
+		(humanoid :: any).EvaluateStateMachine = false
+	end)
 
 	local root = clone:FindFirstChild("HumanoidRootPart")
 	if root == nil or not root:IsA("BasePart") then
@@ -80,19 +91,20 @@ local function buildGuard(): Model?
 	end
 	clone.PrimaryPart = root
 
-	-- Unanchored so it can walk; non-colliding with players so it never shoves
-	-- the owner around or jams a doorway.
+	-- Anchored (CFrame-driven, no physics to fight or replicate) and
+	-- non-colliding (players walk through it; it never shoves the owner).
 	for _, d in clone:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.Anchored = false
+			d.Anchored = true
 			d.CanCollide = false
+			d.CanQuery = false
 		end
 	end
 	return clone
 end
 
 local function despawn(player: Player)
-	generation[player] = (generation[player] or 0) + 1 -- invalidate any loop
+	generation[player] = (generation[player] or 0) + 1 -- retire any follow conn
 	local guard = guards[player]
 	guards[player] = nil
 	if guard ~= nil then
@@ -108,9 +120,7 @@ local function ownerRootOf(player: Player): BasePart?
 	return if root ~= nil and root:IsA("BasePart") then root else nil
 end
 
-local spawnFor -- forward declaration (the loop can ask for a respawn)
-
-spawnFor = function(player: Player)
+local function spawnFor(player: Player)
 	despawn(player) -- one guard at a time
 	if player:GetAttribute(ATTRIBUTE) ~= true then
 		return
@@ -123,49 +133,33 @@ spawnFor = function(player: Player)
 	if guard == nil then
 		return
 	end
-	guard:PivotTo(CFrame.new(ownerRoot.Position + Vector3.new(FOLLOW_GAP, 0, 0)))
+	local start = ownerRoot.CFrame * FOLLOW_OFFSET
+	guard:PivotTo(CFrame.lookAt(start.Position, start.Position + ownerRoot.CFrame.LookVector))
 	guard.Parent = Workspace
 	guards[player] = guard
 
 	local gen = (generation[player] or 0) + 1
 	generation[player] = gen
 
-	-- A fallen guard (fell off the map, drowned, etc.) comes back once.
-	local humanoid = guard:FindFirstChildOfClass("Humanoid")
-	if humanoid ~= nil then
-		humanoid.Died:Connect(function()
-			task.wait(RESPAWN_DELAY)
-			if generation[player] == gen and player.Parent ~= nil and player:GetAttribute(ATTRIBUTE) == true then
-				spawnFor(player)
-			end
-		end)
-	end
-
-	task.spawn(function()
-		while generation[player] == gen do
-			task.wait(FOLLOW_TICK)
-			if generation[player] ~= gen then
-				break
-			end
-			local guardModel = guards[player]
-			local ownerNow = ownerRootOf(player)
-			if guardModel == nil or guardModel.Parent == nil or ownerNow == nil then
-				break -- guard gone or owner dead/absent; respawn is event-driven
-			end
-			local hum = guardModel:FindFirstChildOfClass("Humanoid")
-			local gRoot = guardModel:FindFirstChild("HumanoidRootPart")
-			if hum == nil or gRoot == nil or not gRoot:IsA("BasePart") then
-				break
-			end
-			local target = ownerNow.Position
-			local away = gRoot.Position - target
-			if away.Magnitude > SNAP_RANGE then
-				guardModel:PivotTo(CFrame.new(target + Vector3.new(FOLLOW_GAP, 0, 0)))
-			else
-				-- Hold a few studs off so it trails rather than stands on them.
-				local dir = if away.Magnitude > 0.1 then Vector3.new(away.X, 0, away.Z).Unit else Vector3.new(1, 0, 0)
-				hum:MoveTo(target + dir * FOLLOW_GAP)
-			end
+	local conn: RBXScriptConnection
+	conn = RunService.Heartbeat:Connect(function()
+		if generation[player] ~= gen then
+			conn:Disconnect()
+			return
+		end
+		local guardModel = guards[player]
+		local ownerNow = ownerRootOf(player)
+		if guardModel == nil or guardModel.Parent == nil or ownerNow == nil then
+			return -- owner absent/dead; the event handlers respawn or despawn us
+		end
+		local ownerCF = ownerNow.CFrame
+		local spot = ownerCF * FOLLOW_OFFSET
+		local goal = CFrame.lookAt(spot.Position, spot.Position + ownerCF.LookVector)
+		local current = guardModel:GetPivot()
+		if (current.Position - goal.Position).Magnitude > SNAP_RANGE then
+			guardModel:PivotTo(goal)
+		else
+			guardModel:PivotTo(current:Lerp(goal, FOLLOW_ALPHA))
 		end
 	end)
 end
