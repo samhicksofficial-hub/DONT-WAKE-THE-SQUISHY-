@@ -536,8 +536,11 @@ Config.Passes = {
 Config.Gear = {
 	{ key = "SpeedCoil", pass = "SpeedCoil", template = "SpeedCoil", kind = "tool",
 		name = "Speed Coil", blurb = "Run faster, forever" },
+	-- sellable = false: everyone gets the slap hand as free default kit
+	-- (GearService.DEFAULT_GEAR), so its pass stays parked and no basement stand
+	-- sells it. The entry stays for the default hand-out and template lookup.
 	{ key = "SlapHand", pass = "SlapHand", template = "DefaultSlap", kind = "tool",
-		name = "Slap Hand", blurb = "Send them flying" },
+		name = "Slap Hand", blurb = "Send them flying", sellable = false },
 	-- displayYaw: the pistol model lies side-on to the stand's front, so its
 	-- display copy turns a quarter to face the room.
 	{ key = "Glock", pass = "Glock", template = "Glock-17", kind = "tool",

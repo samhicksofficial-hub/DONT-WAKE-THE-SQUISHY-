@@ -39,10 +39,23 @@ local lastPrompt: { [Player]: number } = {}
 
 -- ------------------------------------------------------------- catalogue --
 
+-- The gear the basement STANDS sell: Config.Gear minus anything flagged
+-- `sellable = false`. The slap hand is free default kit (DEFAULT_GEAR hands it
+-- to everyone), so its pass is parked at 0 and a stand for it would sit at
+-- "Coming soon" forever — it stays in Config.Gear for the hand-out and the
+-- purchase-finished match, but no stand shows it. Every entry left here has a
+-- real pass, so every stand that appears is buyable.
+local standCatalogue: { any } = {}
+for _, gear in Config.Gear :: { any } do
+	if gear.sellable ~= false then
+		table.insert(standCatalogue, gear)
+	end
+end
+
 -- The gear shown on stand `slotOnFloor` of an item floor, or nil past the end
--- of the catalogue — those stands stay bare.
+-- of the sellable catalogue — those stands stay bare.
 function GearService.ForStand(slotOnFloor: number): any
-	return (Config.Gear :: { any })[slotOnFloor]
+	return standCatalogue[slotOnFloor]
 end
 
 function GearService.PassId(gear: any): number
