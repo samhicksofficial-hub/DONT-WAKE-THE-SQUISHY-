@@ -23,6 +23,7 @@ local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Util = require(Shared:WaitForChild("Util"))
 
 local GearService = {}
 
@@ -69,7 +70,7 @@ function GearService.PriceAsync(gear: any): number?
 	if not ok or typeof(info) ~= "table" then
 		return nil
 	end
-	local price = tonumber(info.PriceInRobux)
+	local price = Util.robuxPrice(info)
 	if price == nil then
 		return nil
 	end

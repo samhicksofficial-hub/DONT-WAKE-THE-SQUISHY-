@@ -21,6 +21,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Util = require(Shared:WaitForChild("Util"))
 local UiRefs = require(script.Parent.UiRefs)
 
 local BoostUi = {}
@@ -142,7 +143,7 @@ local function buildButton(stack: Frame, spec: Spec)
 			local ok, info = pcall(function()
 				return MarketplaceService:GetProductInfo(spec.productId, Enum.InfoType.Product)
 			end)
-			local robux = ok and typeof(info) == "table" and tonumber((info :: any).PriceInRobux) or nil
+			local robux = ok and Util.robuxPrice(info) or nil
 			if robux ~= nil then
 				priceText = ("R$ %d"):format(robux)
 			end

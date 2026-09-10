@@ -29,6 +29,24 @@ function Util.formatMoney(amount: number): string
 	return ("%s$%d"):format(sign, math.floor(n + 0.5))
 end
 
+-- The sticker price to DISPLAY from a GetProductInfo result: the base price a
+-- standard (non-Premium) player is charged.
+--
+-- GetProductInfo returns PriceInRobux already reduced by any active Roblox
+-- Premium discount — and it returns that SAME reduced figure to everyone,
+-- Premium or not (verified: a no-Premium server read it too). The true base
+-- sits in UserBasePriceInRobux. Showing PriceInRobux would print the Premium
+-- price to the non-Premium majority, who are then charged the higher base at
+-- the purchase prompt. Displaying the base is honest for everyone: Premium
+-- members still get their discount applied automatically at checkout. Falls
+-- back to PriceInRobux for any payload that omits the base field.
+function Util.robuxPrice(info: any): number?
+	if typeof(info) ~= "table" then
+		return nil
+	end
+	return tonumber(info.UserBasePriceInRobux) or tonumber(info.PriceInRobux)
+end
+
 -- Picks an entry from a list of tables that each carry a `weight` field.
 function Util.weightedRandom<T>(list: { T }, rng: Random): T
 	local total = 0

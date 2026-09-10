@@ -38,6 +38,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Util = require(Shared:WaitForChild("Util"))
 
 local DefenseService = {}
 
@@ -204,7 +205,7 @@ local function priceLine(gui: Instance, productId: number)
 				return MarketplaceService:GetProductInfo(productId, Enum.InfoType.Product)
 			end)
 			if ok and typeof(info) == "table" then
-				price = tonumber((info :: any).PriceInRobux)
+				price = Util.robuxPrice(info)
 				if price ~= nil then
 					priceCache[productId] = price
 				end

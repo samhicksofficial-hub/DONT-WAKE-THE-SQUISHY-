@@ -90,7 +90,7 @@ local function bindBuy(buy: Instance?, id: number, isPass: boolean)
 				)
 			end)
 			if ok and typeof(info) == "table" and text ~= nil and text:IsA("TextLabel") then
-				local price = (info :: any).PriceInRobux
+				local price = Util.robuxPrice(info)
 				if price ~= nil then
 					text.Text = tostring(price)
 				end
@@ -182,10 +182,10 @@ function ShopUi.Start()
 			priceLabel.Text = if starterId == 0 then "Soon" else "R$ ..."
 			if starterId ~= 0 then
 				task.spawn(function()
-					local ok, info = pcall(function()
+					local _ok, info = pcall(function()
 						return MarketplaceService:GetProductInfo(starterId, Enum.InfoType.Product)
 					end)
-					local robux = if ok and typeof(info) == "table" then tonumber((info :: any).PriceInRobux) else nil
+					local robux = Util.robuxPrice(info)
 					if robux ~= nil and priceLabel.Parent ~= nil then
 						priceLabel.Text = ("R$ %d"):format(robux)
 					end
