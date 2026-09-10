@@ -207,7 +207,13 @@ function ShopService.Start(services: any, _map: any)
 	local shop = Config.Shop :: any
 
 	ShopService.RegisterProductHandler(tonumber(products.StarterPack) or 0, function(_receipt, buyer)
-		grantStarterPack(buyer)
+		-- Once per player, enforced HERE and not only in the UI: Roblox
+		-- re-delivers a receipt the server died before acknowledging, and an
+		-- unguarded grant would hand the whole bundle over again on rejoin.
+		-- An owner's receipt is acknowledged without regranting instead.
+		if buyer:GetAttribute("StarterPackOwned") ~= true then
+			grantStarterPack(buyer)
+		end
 		return true
 	end)
 	ShopService.RegisterProductHandler(tonumber(products.Boost2x) or 0, function(_receipt, buyer)

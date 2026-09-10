@@ -322,20 +322,28 @@ Every panel's `Title.Close` (and `Wheel.Close`) closes it. Panel titles are the
 - **Rebirth multiplier**: `EconomyService.AddMoney` applies it (single choke point),
   so pads/wheel/all sources scale together.
 
-## Monetization (ids parked — needs the user's Creator Dashboard)
+## Monetization (live ids in Config since 2026-09-11)
 The Shop sells developer products (Config.Products: starter pack, 2x cash boost,
-three cash bundles, wheel spins, Steal) and game passes (Config.Passes: VIP,
-PermanentSpeed); what each grants is tuned in Config.Shop. ShopService owns the
-game's ONE MarketplaceService.ProcessReceipt and routes receipts by id -
-anything else selling a product registers a handler with it (StealService does).
+five cash bundles, wheel spins, Steal, the defence pads, the server boosts) and
+game passes (Config.Passes: VIP, PermanentSpeed, the basement gear); what each
+grants is tuned in Config.Shop. ShopService owns the game's ONE
+MarketplaceService.ProcessReceipt and routes receipts by id - anything else
+selling a product registers a handler with it (StealService, DefenseService,
+and the place's DonationLeaderboard do). The starter pack's receipt handler is
+idempotent: Roblox re-delivers a receipt the server died before acknowledging,
+so an owner's receipt is acknowledged without granting the bundle again.
 Stealing is PAID: the prompt opens the Products.Steal purchase and the squishy
 moves instantly — level and variant intact — on the receipt; an active Base
 Lock refuses it at the prompt and again at the receipt.
 Grants land as player attributes: VipActive and BoostUntil (EconomyService
 multiplies income at its choke point), PermSpeedBonus (SquishyService adds it to
 walkspeed). While an id is 0 the card shows GREYED and un-buyable; no code
-guesses ids. NOTE: the DonationLeaderboard free model in the place also assigns
-ProcessReceipt - whichever runs last wins, same as before ShopService existed.
+guesses ids. NOTE (fixed 2026-09-11): the DonationLeaderboard free model in the
+place used to assign ProcessReceipt itself, racing ShopService's assignment —
+whichever ran last silently broke the other side's purchases. Its place-only
+Server script now registers its donation products into ShopService's router
+instead. Its DonationProducts list is still EMPTY, so the board takes no
+donations until product ids are added there.
 
 ---
 
