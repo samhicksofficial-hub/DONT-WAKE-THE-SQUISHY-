@@ -566,6 +566,10 @@ Config.Shop = {
 	Boost2xMult = 2,
 	VipIncomeMult = 1.5,
 	PermanentSpeedBonus = 6, -- studs/s on top of the base walkspeed
+	-- The Speed Coil pass (Config.Gear SpeedCoil): walkspeed is multiplied by
+	-- this WHILE the coil is held (SquishyService.baseSpeed). 1.5 = +50%. Tune
+	-- freely; it only ever applies to the owned coil, not the wheel's loan.
+	SpeedCoilHeldMult = 1.5,
 	CashAmounts = { Small = 50e3, Medium = 500e3, Large = 5e6, Huge = 5e9, Mega = 50e9 },
 }
 

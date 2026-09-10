@@ -17,6 +17,8 @@ local SquishyFactory = require(sharedFolder:WaitForChild("SquishyFactory"))
 
 local GROUND_Y = 1 -- top surface of the field/walkway slabs (DESIGN.md)
 local CARRY_GAP = 2 -- studs of air between the head top and the carried body base
+-- The gear tool whose owner moves faster while it is in hand (SpeedCoil pass).
+local COIL_NAME = "SpeedCoil"
 
 local SquishyService = {}
 
@@ -26,7 +28,12 @@ local discoveryService: any = nil
 local plotService: any = nil
 
 type CarryEntry = { model: Model, def: any, variant: string }
-type PlayerConns = { characterAdded: RBXScriptConnection?, died: RBXScriptConnection? }
+type PlayerConns = {
+	characterAdded: RBXScriptConnection?,
+	died: RBXScriptConnection?,
+	coilAdded: RBXScriptConnection?,
+	coilRemoved: RBXScriptConnection?,
+}
 
 local rng = Random.new()
 local mapRef: any = nil
@@ -73,6 +80,20 @@ local function baseSpeed(player: Player): number
 	local passBonus = tonumber(player:GetAttribute("PermSpeedBonus"))
 	if passBonus ~= nil and passBonus > 0 then
 		speed += passBonus
+	end
+	-- The Speed Coil pass: the owner moves faster while the coil is in hand — a
+	-- permanent version of the wheel's timed loan. The LOANED coil is excluded
+	-- (WheelService already drives that one through the SpeedBoost attribute
+	-- above; multiplying here too would stack). Re-applied on equip/unequip by
+	-- the character tool watchers in onCharacterAdded.
+	local character = player.Character
+	if character ~= nil then
+		for _, child in character:GetChildren() do
+			if child:IsA("Tool") and child.Name == COIL_NAME and child:GetAttribute("WheelLoan") ~= true then
+				speed *= math.max(1, tonumber((Config.Shop :: any).SpeedCoilHeldMult) or 1)
+				break
+			end
+		end
 	end
 	return speed
 end
@@ -632,6 +653,26 @@ local function onCharacterAdded(player: Player, character: Model)
 	conns.died = humanoid.Died:Connect(function()
 		SquishyService.ForceDrop(player)
 	end)
+
+	-- Equipping/unequipping a tool reparents it to/from the character; when that
+	-- tool is the Speed Coil, the held-coil speed bonus turns on or off, so
+	-- re-apply. Reconnected per character; the old character's connections die
+	-- with it, but disconnect explicitly to stay tidy.
+	local oldCoilAdded = conns.coilAdded
+	if oldCoilAdded ~= nil then
+		oldCoilAdded:Disconnect()
+	end
+	local oldCoilRemoved = conns.coilRemoved
+	if oldCoilRemoved ~= nil then
+		oldCoilRemoved:Disconnect()
+	end
+	local function onToolChange(child: Instance)
+		if child:IsA("Tool") and child.Name == COIL_NAME then
+			pcall(applySpeed, player)
+		end
+	end
+	conns.coilAdded = character.ChildAdded:Connect(onToolChange)
+	conns.coilRemoved = character.ChildRemoved:Connect(onToolChange)
 end
 
 function SquishyService.Start(services: any, map: any)
