@@ -542,9 +542,12 @@ Config.Gear = {
 	{ key = "SlapHand", pass = "SlapHand", template = "DefaultSlap", kind = "tool",
 		name = "Slap Hand", blurb = "Send them flying", sellable = false },
 	-- displayYaw: the pistol model lies side-on to the stand's front, so its
-	-- display copy turns a quarter to face the room.
-	{ key = "Glock", pass = "Glock", template = "Glock-17", kind = "tool",
-		name = "Glock-17", blurb = "Look the part", displayYaw = 90 },
+	-- display copy turns a quarter to face the room. Branded Block-19 in-game
+	-- (Roblox moderated "Glock" out of the pass name, and the owner picked the
+	-- Block name); key/pass stay "Glock" because the Owns attribute and the
+	-- Config.Passes id hang off them.
+	{ key = "Glock", pass = "Glock", template = "Block-19", kind = "tool",
+		name = "Block-19", blurb = "Look the part", displayYaw = 90 },
 	{ key = "Knight", pass = "Knight", template = "The Knight", kind = "bodyguard",
 		name = "The Knight", blurb = "Your own bodyguard" },
 }
