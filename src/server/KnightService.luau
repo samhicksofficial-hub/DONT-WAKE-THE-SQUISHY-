@@ -4,22 +4,23 @@
 -- Owning the pass sets the OwnsKnight attribute (GearService.grant); this
 -- service turns that flag into an actual follower: a Knight that spawns beside
 -- its owner and trails them around the map, re-spawning if it goes missing and
--- despawning when the owner leaves. Nothing else in the game read that
--- attribute before, so the pass used to grant nothing visible.
+-- despawning when the owner leaves.
 --
 -- SECURITY / BEHAVIOUR: the imported "The Knight" template is a free-model
 -- KILLER NPC ("JeffTheKiller") whose own scripts chase and attack everyone. We
--- take only its LOOK — armour meshes, body colours, helmet, body parts — and
--- STRIP every script on clone, so none of the free model's code ever runs. It
--- does NOT attack: a companion, not a weapon (player-targeting combat would be
--- a griefing vector and is left out on purpose).
+-- take only its LOOK and STRIP every script on clone, so none of the free
+-- model's code ever runs. It does NOT attack: a companion, not a weapon
+-- (player-targeting combat would be a griefing vector and is left out on
+-- purpose). Jeff's leftover Knife prop is deleted too — the Knight carries his
+-- own sword, fitted into his right hand and welded to the arm.
 --
--- MOVEMENT: the follower is ANCHORED and driven by CFrame (a smooth lerp toward
--- a spot beside its owner) rather than by Humanoid:MoveTo. An imported rig walks
--- unreliably under server MoveTo — Roblox hands its physics ownership to the
--- nearest player's client, which silently defeats server movement, and the rig
--- trips on plot geometry. A CFrame glide is predictable on every surface. The
--- Humanoid is kept only so the armour and body colours render.
+-- MOVEMENT: only the ROOT is anchored and CFrame-glided toward a spot beside
+-- the owner (Humanoid:MoveTo on an imported rig is unreliable — physics
+-- ownership near players silently defeats server movement). The limbs stay
+-- unanchored on their Motor6D joints, which is what lets Roblox's own R6
+-- walk/idle animations move them: a fully anchored rig ignores animation.
+-- Feet are kept on the ground by raycasting the floor under the follow spot
+-- and standing the rig at its measured foot offset above the hit.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -36,6 +37,11 @@ local ATTRIBUTE = "OwnsKnight"
 local FOLLOW_OFFSET = CFrame.new(3, 0, 5)
 local FOLLOW_ALPHA = 0.12 -- per-frame catch-up; higher snaps faster
 local SNAP_RANGE = 60 -- fall this far behind (owner teleported) and jump to them
+-- Roblox's own classic R6 animations — loadable in any game, unlike
+-- creator-locked uploads.
+local WALK_ANIMATION = "rbxassetid://180426354"
+local IDLE_ANIMATION = "rbxassetid://180435571"
+local WALK_THRESHOLD = 1.5 -- studs/s of actual glide below which it stands idle
 
 -- player -> live bodyguard model, and a per-player generation that retires an
 -- old follow connection the instant a new guard (or a despawn) supersedes it.
@@ -48,8 +54,80 @@ local function findTemplate(): Model?
 	return if t ~= nil and t:IsA("Model") then t else nil
 end
 
--- A clone with every script stripped, anchored and non-colliding, or nil when
--- the place carries no Knight art (a clean rojo build).
+-- The free model authored the sword floating beside the rig (its old scripts
+-- attached it at runtime, and those are gone on purpose). Geometry finds the
+-- grip: the blade is the longest single part, so the handle end of the long
+-- axis is the one farther from the blade's own centre. The sword is pivoted so
+-- the grip sits in the right palm, blade up with a slight forward tilt, then
+-- welded to the arm so the walk swing carries it.
+local function fitSword(clone: Model)
+	local sword = clone:FindFirstChild("Knight Sword")
+	local rightArm = clone:FindFirstChild("Right Arm")
+	if sword == nil or not sword:IsA("Model") or rightArm == nil or not rightArm:IsA("BasePart") then
+		return
+	end
+
+	local scf, ssize = sword:GetBoundingBox()
+	local axis: Vector3
+	local length: number
+	if ssize.X >= ssize.Y and ssize.X >= ssize.Z then
+		axis, length = scf.XVector, ssize.X
+	elseif ssize.Y >= ssize.Z then
+		axis, length = scf.YVector, ssize.Y
+	else
+		axis, length = scf.ZVector, ssize.Z
+	end
+
+	local blade: BasePart? = nil
+	local bladeLen = 0
+	for _, p in sword:GetDescendants() do
+		if p:IsA("BasePart") then
+			local longest = math.max(p.Size.X, p.Size.Y, p.Size.Z)
+			if longest > bladeLen then
+				bladeLen = longest
+				blade = p
+			end
+		end
+	end
+	local toBlade = axis
+	if blade ~= nil and (blade.Position - scf.Position):Dot(axis) < 0 then
+		toBlade = -axis
+	end
+
+	-- A hair in from the handle tip, where a fist would close.
+	local grip = scf.Position - toBlade * (length / 2 - 0.6)
+	local palm = (rightArm.CFrame * CFrame.new(0, -0.95, 0)).Position
+	local target = (Vector3.yAxis + clone:GetPivot().LookVector * 0.35).Unit
+
+	local dot = math.clamp(toBlade:Dot(target), -1, 1)
+	local rotation: CFrame
+	if dot > 0.9999 then
+		rotation = CFrame.identity
+	elseif dot < -0.9999 then
+		rotation = CFrame.fromAxisAngle(rightArm.CFrame.LookVector, math.pi)
+	else
+		rotation = CFrame.fromAxisAngle(toBlade:Cross(target).Unit, math.acos(dot))
+	end
+
+	-- world map: X -> palm + rotation * (X - grip)
+	sword:PivotTo(CFrame.new(palm) * rotation * CFrame.new(-grip) * sword:GetPivot())
+
+	for _, p in sword:GetDescendants() do
+		if p:IsA("BasePart") then
+			p.Anchored = false
+			p.Massless = true
+			p.CanCollide = false
+			p.CanQuery = false
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = rightArm
+			weld.Part1 = p
+			weld.Parent = p
+		end
+	end
+end
+
+-- A clone with every script stripped, sword in hand, root anchored, or nil
+-- when the place carries no Knight art (a clean rojo build).
 local function buildGuard(): Model?
 	local template = findTemplate()
 	if template == nil then
@@ -58,8 +136,8 @@ local function buildGuard(): Model?
 	local clone = template:Clone()
 	clone.Name = "KnightGuard"
 
-	-- Kill JeffTheKillerMain, AnimateSauce, Respawn, Health — every source
-	-- container the free model shipped. Collected first, destroyed after.
+	-- Kill every source container the free model shipped. Collected first,
+	-- destroyed after.
 	local doomed: { Instance } = {}
 	for _, d in clone:GetDescendants() do
 		if d:IsA("LuaSourceContainer") then
@@ -70,6 +148,12 @@ local function buildGuard(): Model?
 		d:Destroy()
 	end
 
+	-- Jeff's knife is not knightly.
+	local knife = clone:FindFirstChild("Knife")
+	if knife ~= nil then
+		knife:Destroy()
+	end
+
 	local humanoid = clone:FindFirstChildOfClass("Humanoid")
 	if humanoid == nil then
 		clone:Destroy()
@@ -77,12 +161,10 @@ local function buildGuard(): Model?
 	end
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
-	-- The rig is moved by CFrame, not by its Humanoid; take the state machine
-	-- out of the way so it never fights the glide or tries to "stand up".
-	humanoid.PlatformStand = true
-	pcall(function()
-		(humanoid :: any).EvaluateStateMachine = false
-	end)
+	if humanoid:FindFirstChildOfClass("Animator") == nil then
+		local animator = Instance.new("Animator")
+		animator.Parent = humanoid
+	end
 
 	local root = clone:FindFirstChild("HumanoidRootPart")
 	if root == nil or not root:IsA("BasePart") then
@@ -91,15 +173,25 @@ local function buildGuard(): Model?
 	end
 	clone.PrimaryPart = root
 
-	-- Anchored (CFrame-driven, no physics to fight or replicate) and
-	-- non-colliding (players walk through it; it never shoves the owner).
+	fitSword(clone)
+
+	-- Only the root is anchored: the glide drives it, the Motor6D joints carry
+	-- the unanchored limbs, and that is what lets the walk animation move them
+	-- (a fully anchored rig ignores animation). Nothing collides: players walk
+	-- straight through their bodyguard.
 	for _, d in clone:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.Anchored = true
+			d.Anchored = d == root
 			d.CanCollide = false
 			d.CanQuery = false
+			d.Massless = d ~= root
 		end
 	end
+
+	-- How far the pivot (root) sits above the lowest point (the soles), so the
+	-- follow loop can stand the rig exactly on whatever floor it raycasts.
+	local bboxCF, bboxSize = clone:GetBoundingBox()
+	clone:SetAttribute("FootOffset", clone:GetPivot().Position.Y - (bboxCF.Position.Y - bboxSize.Y / 2))
 	return clone
 end
 
@@ -138,11 +230,39 @@ local function spawnFor(player: Player)
 	guard.Parent = Workspace
 	guards[player] = guard
 
+	local footOffset = tonumber(guard:GetAttribute("FootOffset")) or 3
+
+	-- Roblox's own R6 walk/idle, faded between by how fast the glide is
+	-- actually moving. pcall-guarded: a failed load just means no animation.
+	local humanoid = guard:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid ~= nil and humanoid:FindFirstChildOfClass("Animator") or nil
+	local function loadTrack(id: string): AnimationTrack?
+		if animator == nil then
+			return nil
+		end
+		local animation = Instance.new("Animation")
+		animation.AnimationId = id
+		local ok, track = pcall(animator.LoadAnimation, animator, animation)
+		return if ok then track else nil
+	end
+	local walkTrack = loadTrack(WALK_ANIMATION)
+	local idleTrack = loadTrack(IDLE_ANIMATION)
+	if idleTrack ~= nil then
+		idleTrack.Looped = true
+		idleTrack:Play()
+	end
+	if walkTrack ~= nil then
+		walkTrack.Looped = true
+	end
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
 	local gen = (generation[player] or 0) + 1
 	generation[player] = gen
 
 	local conn: RBXScriptConnection
-	conn = RunService.Heartbeat:Connect(function()
+	conn = RunService.Heartbeat:Connect(function(dt: number)
 		if generation[player] ~= gen then
 			conn:Disconnect()
 			return
@@ -153,13 +273,39 @@ local function spawnFor(player: Player)
 			return -- owner absent/dead; the event handlers respawn or despawn us
 		end
 		local ownerCF = ownerNow.CFrame
-		local spot = ownerCF * FOLLOW_OFFSET
-		local goal = CFrame.lookAt(spot.Position, spot.Position + ownerCF.LookVector)
+		local spotPos = (ownerCF * FOLLOW_OFFSET).Position
+
+		-- Stand on the actual floor under the follow spot, not at the owner's
+		-- hip height — different rigs, different legs.
+		local character = ownerNow.Parent
+		rayParams.FilterDescendantsInstances = if character ~= nil then { guardModel, character } else { guardModel }
+		local hit = Workspace:Raycast(spotPos + Vector3.new(0, 6, 0), Vector3.new(0, -40, 0), rayParams)
+		local goalY = if hit ~= nil then hit.Position.Y + footOffset else spotPos.Y
+		local goalPos = Vector3.new(spotPos.X, goalY, spotPos.Z)
+		local goal = CFrame.lookAt(goalPos, goalPos + ownerCF.LookVector)
+
 		local current = guardModel:GetPivot()
+		local newCF: CFrame
 		if (current.Position - goal.Position).Magnitude > SNAP_RANGE then
-			guardModel:PivotTo(goal)
+			newCF = goal
 		else
-			guardModel:PivotTo(current:Lerp(goal, FOLLOW_ALPHA))
+			newCF = current:Lerp(goal, FOLLOW_ALPHA)
+		end
+		guardModel:PivotTo(newCF)
+
+		if walkTrack ~= nil and idleTrack ~= nil and dt > 0 then
+			local step = newCF.Position - current.Position
+			local speed = Vector3.new(step.X, 0, step.Z).Magnitude / dt
+			if speed > WALK_THRESHOLD then
+				if not walkTrack.IsPlaying then
+					idleTrack:Stop(0.2)
+					walkTrack:Play(0.2)
+				end
+				walkTrack:AdjustSpeed(math.clamp(speed / 14, 0.5, 2))
+			elseif walkTrack.IsPlaying then
+				walkTrack:Stop(0.2)
+				idleTrack:Play(0.2)
+			end
 		end
 	end)
 end
