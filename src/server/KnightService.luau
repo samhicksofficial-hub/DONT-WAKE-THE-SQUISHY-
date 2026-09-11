@@ -58,8 +58,9 @@ end
 -- attached it at runtime, and those are gone on purpose). Geometry finds the
 -- grip: the blade is the longest single part, so the handle end of the long
 -- axis is the one farther from the blade's own centre. The sword is pivoted so
--- the grip sits in the right palm, blade up with a slight forward tilt, then
--- welded to the arm so the walk swing carries it.
+-- the grip sits in the right palm, carried at rest — blade trailing behind
+-- him, tip a touch above the grip, per the owner's sketch — then welded to the
+-- arm so the walk swing carries it.
 local function fitSword(clone: Model)
 	local sword = clone:FindFirstChild("Knight Sword")
 	local rightArm = clone:FindFirstChild("Right Arm")
@@ -97,7 +98,7 @@ local function fitSword(clone: Model)
 	-- A hair in from the handle tip, where a fist would close.
 	local grip = scf.Position - toBlade * (length / 2 - 0.6)
 	local palm = (rightArm.CFrame * CFrame.new(0, -0.95, 0)).Position
-	local target = (Vector3.yAxis + clone:GetPivot().LookVector * 0.35).Unit
+	local target = (-clone:GetPivot().LookVector + Vector3.yAxis * 0.25).Unit
 
 	local dot = math.clamp(toBlade:Dot(target), -1, 1)
 	local rotation: CFrame
