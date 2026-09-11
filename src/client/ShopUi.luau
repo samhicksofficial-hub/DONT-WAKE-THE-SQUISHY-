@@ -258,30 +258,60 @@ function ShopUi.Start()
 	if bundles ~= nil then
 		local receive = liftReceive(bundles)
 		if receive ~= nil then
-			-- The pack ships three tiles; the $5B and $50B tiers ride on clones
-			-- of the last one so they inherit its art, and the row's own
-			-- UIListLayout squeezes all five in. LayoutOrder pins the order —
-			-- the authored tiles all sit at 0 and a clone would sort among
-			-- them, not after them.
+			-- Five tiles in the pack's single row never fit: each tile squares
+			-- itself to the row height, so the edges clipped off the card. Two
+			-- rows instead — the three small bundles on top, the $5B and $50B
+			-- as LARGER tiles underneath. The card grows to hold both (the
+			-- scrolling frame's canvas is AutomaticSize.Y, so it just scrolls).
+			bundles.Size = UDim2.new(0.95, 0, 1.3, 0)
+			local packLayout = receive:FindFirstChildOfClass("UIListLayout")
+			if packLayout ~= nil then
+				packLayout:Destroy() -- each row brings its own
+			end
+			local function makeRow(name: string, posY: number, sizeY: number): Frame
+				local row = Instance.new("Frame")
+				row.Name = name
+				row.BackgroundTransparency = 1
+				row.AnchorPoint = Vector2.new(0.5, 0)
+				row.Position = UDim2.fromScale(0.5, posY)
+				row.Size = UDim2.fromScale(1, sizeY)
+				local rowLayout = Instance.new("UIListLayout")
+				rowLayout.FillDirection = Enum.FillDirection.Horizontal
+				rowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+				rowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+				rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+				rowLayout.Padding = UDim.new(0.025, 0)
+				rowLayout.Parent = row
+				row.Parent = receive
+				return row
+			end
+			-- The gap between rows leaves room for the top tiles' price
+			-- buttons, which hang below their squares.
+			local rowSmall = makeRow("RowSmall", 0, 0.38)
+			local rowBig = makeRow("RowBig", 0.52, 0.48)
+
+			-- Clone the big tiles from Cash3 BEFORE the originals move rows,
+			-- so they inherit the art. Idempotent: a re-run finds them by name.
 			local template = receive:FindFirstChild("Cash3")
-			for extra, name in { "Cash4", "Cash5" } do
-				if template ~= nil and receive:FindFirstChild(name) == nil then
+			for _, name in { "Cash4", "Cash5" } do
+				if template ~= nil and rowBig:FindFirstChild(name) == nil then
 					local tile = template:Clone()
 					tile.Name = name
-					tile.LayoutOrder = 3 + extra
-					tile.Parent = receive
+					tile.Parent = rowBig
 				end
 			end
 			for order, tier in {
-				{ "Cash1", "CashSmall", shop.CashAmounts.Small },
-				{ "Cash2", "CashMedium", shop.CashAmounts.Medium },
-				{ "Cash3", "CashLarge", shop.CashAmounts.Large },
-				{ "Cash4", "CashHuge", shop.CashAmounts.Huge },
-				{ "Cash5", "CashMega", shop.CashAmounts.Mega },
+				{ "Cash1", "CashSmall", shop.CashAmounts.Small, rowSmall },
+				{ "Cash2", "CashMedium", shop.CashAmounts.Medium, rowSmall },
+				{ "Cash3", "CashLarge", shop.CashAmounts.Large, rowSmall },
+				{ "Cash4", "CashHuge", shop.CashAmounts.Huge, rowBig },
+				{ "Cash5", "CashMega", shop.CashAmounts.Mega, rowBig },
 			} do
-				local tile = receive:FindFirstChild(tier[1] :: string)
+				local home = tier[4] :: Frame
+				local tile = receive:FindFirstChild(tier[1] :: string) or home:FindFirstChild(tier[1] :: string)
 				if tile ~= nil and tile:IsA("GuiObject") then
 					tile.LayoutOrder = order
+					tile.Parent = home
 				end
 				setText(tile, "Amount", "+" .. Util.formatMoney(tier[3] :: number))
 				bindBuy(
