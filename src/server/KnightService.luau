@@ -346,7 +346,17 @@ local function handSummonTool(player: Player)
 	tool.ToolTip = "Summon The Knight"
 	tool.RequiresHandle = false
 	tool.CanBeDropped = false
-	tool.Activated:Connect(function()
+	-- The hotbar slot IS the button: selecting the tool toggles him, and the
+	-- tool immediately hops back to the backpack ready for the next click —
+	-- one click, no second "use" click in the world.
+	tool.Equipped:Connect(function()
+		task.defer(function()
+			local characterNow = player.Character
+			local humanoid = characterNow ~= nil and characterNow:FindFirstChildOfClass("Humanoid") or nil
+			if humanoid ~= nil then
+				humanoid:UnequipTools()
+			end
+		end)
 		local now = os.clock()
 		if now - (lastToggle[player] or 0) < TOGGLE_DEBOUNCE then
 			return
