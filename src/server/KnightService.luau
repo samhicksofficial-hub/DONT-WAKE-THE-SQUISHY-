@@ -234,11 +234,23 @@ local function spawnFor(player: Player)
 	guard.Parent = Workspace
 	guards[player] = guard
 
-	-- Fit the sword against the arm's LIVE pose, one beat after the idle
-	-- animation has settled it. A fit taken at build time against the authored
-	-- pose came out pointing the wrong way once the idle animation rotated the
-	-- arm underneath the weld.
-	task.delay(0.25, function()
+	-- Weld the sword only ONCE the idle animation has dropped the arm into its
+	-- hanging rest pose. The rig spawns in a T-pose (arm horizontal); welded
+	-- then, the blade snapped vertical the instant the arm rotated down
+	-- underneath the weld. The arm's up-axis points ≈+Y only while it hangs,
+	-- so poll that (timeout fallback for the no-animation case), then fit.
+	task.spawn(function()
+		local rightArm = guard:FindFirstChild("Right Arm")
+		if rightArm == nil or not rightArm:IsA("BasePart") then
+			return
+		end
+		local deadline = os.clock() + 3
+		while guards[player] == guard and os.clock() < deadline do
+			if rightArm.CFrame.UpVector.Y > 0.9 then
+				break
+			end
+			task.wait(0.05)
+		end
 		if guards[player] == guard then
 			pcall(fitSword, guard)
 		end
