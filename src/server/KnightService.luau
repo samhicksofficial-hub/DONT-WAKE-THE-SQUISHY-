@@ -2,9 +2,10 @@
 -- KnightService — the Knight bodyguard pass (Config.Passes.Knight).
 --
 -- Owning the pass sets the OwnsKnight attribute (GearService.grant); this
--- service turns that flag into an actual follower: a Knight that spawns beside
--- its owner and trails them around the map, re-spawning if it goes missing and
--- despawning when the owner leaves.
+-- service hands owners a handle-less "Knight" hotbar item, and CLICKING IT
+-- summons the actual follower — a Knight that walks out beside its owner and
+-- trails them around the map. Clicking again dismisses him. He returns after
+-- a respawn only if he was out when they died, and despawns with the owner.
 --
 -- SECURITY / BEHAVIOUR: the imported "The Knight" template is a free-model
 -- KILLER NPC ("JeffTheKiller") whose own scripts chase and attack everyone. We
@@ -311,28 +312,88 @@ local function spawnFor(player: Player)
 	end)
 end
 
+-- ---------------------------------------------------------------- summoning --
+
+-- The hotbar item that toggles him. Handed fresh every spawn BY THIS SERVICE
+-- rather than through StarterGear: the Activated hookup lives here, and a
+-- StarterGear clone would come back without it. No Handle — it is a button
+-- that lives in the hotbar, not a thing held in the hand.
+local TOOL_NAME = "Knight"
+local TOGGLE_DEBOUNCE = 0.3
+
+-- Session memory of whether the owner wants him out: he joins hidden until
+-- the first summon, and returns after a respawn only if he was out then.
+local wantsGuard: { [Player]: boolean } = {}
+local lastToggle: { [Player]: number } = {}
+
+local function handSummonTool(player: Player)
+	if player:GetAttribute(ATTRIBUTE) ~= true then
+		return
+	end
+	local backpack = player:FindFirstChildOfClass("Backpack") or player:WaitForChild("Backpack", 5)
+	if backpack == nil then
+		return
+	end
+	local character = player.Character
+	if
+		backpack:FindFirstChild(TOOL_NAME) ~= nil
+		or (character ~= nil and character:FindFirstChild(TOOL_NAME) ~= nil)
+	then
+		return
+	end
+	local tool = Instance.new("Tool")
+	tool.Name = TOOL_NAME
+	tool.ToolTip = "Summon The Knight"
+	tool.RequiresHandle = false
+	tool.CanBeDropped = false
+	tool.Activated:Connect(function()
+		local now = os.clock()
+		if now - (lastToggle[player] or 0) < TOGGLE_DEBOUNCE then
+			return
+		end
+		lastToggle[player] = now
+		if player:GetAttribute(ATTRIBUTE) ~= true then
+			return
+		end
+		if guards[player] ~= nil then
+			wantsGuard[player] = false
+			despawn(player)
+		else
+			wantsGuard[player] = true
+			spawnFor(player)
+		end
+	end)
+	tool.Parent = backpack
+end
+
 function KnightService.Start(_services: any, _map: any)
 	local function watch(player: Player)
 		player.CharacterAdded:Connect(function()
 			-- Let the character settle before measuring where to place the guard.
 			task.wait(1)
 			if player:GetAttribute(ATTRIBUTE) == true then
-				spawnFor(player)
+				handSummonTool(player)
+				if wantsGuard[player] == true then
+					spawnFor(player)
+				end
 			end
 		end)
 		player.CharacterRemoving:Connect(function()
 			despawn(player)
 		end)
 		-- Bought mid-session: PromptGamePassPurchaseFinished sets the attribute.
+		-- The purchase hands over the summon item; the player chooses when he
+		-- first walks out.
 		player:GetAttributeChangedSignal(ATTRIBUTE):Connect(function()
 			if player:GetAttribute(ATTRIBUTE) == true then
-				spawnFor(player)
+				handSummonTool(player)
 			else
+				wantsGuard[player] = false
 				despawn(player)
 			end
 		end)
 		if player.Character ~= nil and player:GetAttribute(ATTRIBUTE) == true then
-			spawnFor(player)
+			handSummonTool(player)
 		end
 	end
 
@@ -340,7 +401,11 @@ function KnightService.Start(_services: any, _map: any)
 	for _, player in Players:GetPlayers() do
 		watch(player)
 	end
-	Players.PlayerRemoving:Connect(despawn)
+	Players.PlayerRemoving:Connect(function(player)
+		wantsGuard[player] = nil
+		lastToggle[player] = nil
+		despawn(player)
+	end)
 end
 
 return KnightService
