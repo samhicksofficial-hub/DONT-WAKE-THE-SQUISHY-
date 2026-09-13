@@ -69,6 +69,20 @@ local function fitSword(clone: Model)
 		return
 	end
 
+	-- Idempotent: strip any welds from a previous fit and pin the parts so the
+	-- placement below is measured and set without them drifting. No yields
+	-- follow until the re-weld, so unanchored-and-weldless parts never fall.
+	for _, p in sword:GetDescendants() do
+		if p:IsA("BasePart") then
+			for _, w in p:GetChildren() do
+				if w:IsA("WeldConstraint") or w:IsA("Weld") then
+					w:Destroy()
+				end
+			end
+			p.Anchored = true
+		end
+	end
+
 	local scf, ssize = sword:GetBoundingBox()
 	local axis: Vector3
 	local length: number
@@ -234,28 +248,6 @@ local function spawnFor(player: Player)
 	guard.Parent = Workspace
 	guards[player] = guard
 
-	-- Weld the sword only ONCE the idle animation has dropped the arm into its
-	-- hanging rest pose. The rig spawns in a T-pose (arm horizontal); welded
-	-- then, the blade snapped vertical the instant the arm rotated down
-	-- underneath the weld. The arm's up-axis points ≈+Y only while it hangs,
-	-- so poll that (timeout fallback for the no-animation case), then fit.
-	task.spawn(function()
-		local rightArm = guard:FindFirstChild("Right Arm")
-		if rightArm == nil or not rightArm:IsA("BasePart") then
-			return
-		end
-		local deadline = os.clock() + 3
-		while guards[player] == guard and os.clock() < deadline do
-			if rightArm.CFrame.UpVector.Y > 0.9 then
-				break
-			end
-			task.wait(0.05)
-		end
-		if guards[player] == guard then
-			pcall(fitSword, guard)
-		end
-	end)
-
 	local footOffset = tonumber(guard:GetAttribute("FootOffset")) or 3
 
 	-- Roblox's own R6 walk/idle, faded between by how fast the glide is
@@ -280,6 +272,49 @@ local function spawnFor(player: Player)
 	if walkTrack ~= nil then
 		walkTrack.Looped = true
 	end
+
+	-- Weld the sword only once the IDLE animation is actually driving the arm
+	-- into its hanging rest pose. The template's authored arm pose reads as
+	-- "hanging" too but sits ~90° off where idle puts it, so a fit taken before
+	-- idle engaged came out vertical. Wait for idle to be playing AND the arm
+	-- settled, fit, then verify the blade trailed — retrying if the arm was
+	-- mid-sway. fitSword is idempotent, so a retry re-welds cleanly.
+	task.spawn(function()
+		local rightArm = guard:FindFirstChild("Right Arm")
+		if rightArm == nil or not rightArm:IsA("BasePart") then
+			return
+		end
+		local function ready(): boolean
+			local idleGoing = idleTrack == nil or (idleTrack.IsPlaying and idleTrack.TimePosition > 0.35)
+			return idleGoing and rightArm.CFrame.UpVector.Y > 0.9
+		end
+		local deadline = os.clock() + 3
+		while guards[player] == guard and os.clock() < deadline and not ready() do
+			task.wait(0.05)
+		end
+		if guards[player] ~= guard then
+			return
+		end
+		task.wait(0.15) -- let idle settle fully before capturing the weld
+		for _ = 1, 3 do
+			if guards[player] ~= guard then
+				return
+			end
+			pcall(fitSword, guard)
+			task.wait(0.1)
+			local sword = guard:FindFirstChild("Knight Sword")
+			if sword == nil then
+				return
+			end
+			local scf = sword:GetBoundingBox()
+			local palm = (rightArm.CFrame * CFrame.new(0, -0.95, 0)).Position
+			local trailing = (scf.Position - palm).Unit:Dot(-guard:GetPivot().LookVector)
+			if trailing > 0.5 then
+				break -- blade is trailing behind; done
+			end
+			task.wait(0.3) -- arm was mid-sway; let it settle and re-fit
+		end
+	end)
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
