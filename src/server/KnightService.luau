@@ -175,15 +175,17 @@ local function buildGuard(): Model?
 	end
 	clone.PrimaryPart = root
 
-	fitSword(clone)
-
 	-- Only the root is anchored: the glide drives it, the Motor6D joints carry
 	-- the unanchored limbs, and that is what lets the walk animation move them
-	-- (a fully anchored rig ignores animation). Nothing collides: players walk
-	-- straight through their bodyguard.
+	-- (a fully anchored rig ignores animation). The SWORD stays pinned exactly
+	-- where the template authored it until fitSword welds it to the live arm —
+	-- unanchored and weldless it would simply fall. Nothing collides: players
+	-- walk straight through their bodyguard.
+	local sword = clone:FindFirstChild("Knight Sword")
 	for _, d in clone:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.Anchored = d == root
+			local inSword = sword ~= nil and d:IsDescendantOf(sword)
+			d.Anchored = d == root or inSword
 			d.CanCollide = false
 			d.CanQuery = false
 			d.Massless = d ~= root
@@ -231,6 +233,16 @@ local function spawnFor(player: Player)
 	guard:PivotTo(CFrame.lookAt(start.Position, start.Position + ownerRoot.CFrame.LookVector))
 	guard.Parent = Workspace
 	guards[player] = guard
+
+	-- Fit the sword against the arm's LIVE pose, one beat after the idle
+	-- animation has settled it. A fit taken at build time against the authored
+	-- pose came out pointing the wrong way once the idle animation rotated the
+	-- arm underneath the weld.
+	task.delay(0.25, function()
+		if guards[player] == guard then
+			pcall(fitSword, guard)
+		end
+	end)
 
 	local footOffset = tonumber(guard:GetAttribute("FootOffset")) or 3
 
