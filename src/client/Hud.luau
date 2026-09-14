@@ -196,6 +196,33 @@ function Hud.Start()
 	player:GetAttributeChangedSignal("Carrying"):Connect(updateDrop)
 	updateDrop()
 
+	-- ------------------------------------------------------ save warning --
+
+	-- SaveService sets SaveDisabled when a player's profile failed to load and
+	-- the session is (for now) not saving. Rather than let that be silent, nag
+	-- them to rejoin; the loop ends on its own if a background reload recovers
+	-- (SaveService clears the attribute) or the player leaves.
+	local nagging = false
+	local function saveWarnLoop()
+		if nagging then
+			return
+		end
+		nagging = true
+		while player:GetAttribute("SaveDisabled") == true and player.Parent ~= nil do
+			UiRefs.notify("Your progress isn't saving right now — rejoin to fix it.", 6)
+			task.wait(30)
+		end
+		nagging = false
+	end
+	player:GetAttributeChangedSignal("SaveDisabled"):Connect(function()
+		if player:GetAttribute("SaveDisabled") == true then
+			task.spawn(saveWarnLoop)
+		end
+	end)
+	if player:GetAttribute("SaveDisabled") == true then
+		task.spawn(saveWarnLoop)
+	end
+
 	-- --------------------------------------------------------- shield button --
 
 	-- Not hidden here any more: the pack's spare Right.Random button is the

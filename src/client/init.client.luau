@@ -9,8 +9,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
--- UiRefs resolves the pack tree first so the rest can assume it exists.
-require(script:WaitForChild("UiRefs")).get()
+-- UiRefs resolves the pack tree first so the rest can assume it exists. Guarded:
+-- one renamed/missing pack node makes get() error after a 20s wait, and
+-- unprotected here that would abort the whole client — no HUD, no shop, no
+-- purchases, and even the pack-independent modules below never start. On failure
+-- we warn (so the missing path is diagnosable) and press on; the pack-dependent
+-- modules fail individually in the pcall loop, the rest still run.
+do
+	local okUi, errUi = pcall(function()
+		require(script:WaitForChild("UiRefs")).get()
+	end)
+	if not okUi then
+		warn(("[%s] UI pack failed to resolve: %s"):format(Config.GameName, tostring(errUi)))
+	end
+end
 
 -- DebugPanel is last and Studio-only: it builds its own overlay rather than
 -- driving the pack, so it must never delay the real UI coming up.

@@ -344,6 +344,38 @@ function DailyUi.Start()
 			show()
 		end
 	end
+
+	-- A HUD button to (re)open the panel. Without one, closing the popup — a
+	-- single mis-tap on a phone — loses the day's reward, and an unclaimed day
+	-- resets the streak server-side. Cloned from the Wheel button so it wears
+	-- the pack's exact styling; the clone carries no runtime connections.
+	local wheelButton = refs.buttons and refs.buttons.Wheel
+	if typeof(wheelButton) == "Instance" and wheelButton:IsA("GuiButton") and wheelButton.Parent ~= nil then
+		local dailyButton = wheelButton:Clone()
+		dailyButton.Name = "Daily"
+		dailyButton.LayoutOrder = 5
+		local text = dailyButton:FindFirstChild("Text")
+		if text ~= nil and text:IsA("TextLabel") then
+			text.Text = "Daily"
+		end
+		local image = dailyButton:FindFirstChild("Image")
+		if image ~= nil and image:IsA("ImageLabel") then
+			image.Image = Config.Icons.Calendar
+		end
+		local badge = dailyButton:FindFirstChild("Notification")
+		dailyButton.Parent = wheelButton.Parent
+		UiRefs.bindButton(dailyButton, function()
+			DailyUi.Toggle()
+		end)
+		-- The red badge shows only while there is a reward waiting.
+		local function refreshBadge()
+			if badge ~= nil and badge:IsA("GuiObject") then
+				badge.Visible = player:GetAttribute("DailyClaimable") == true
+			end
+		end
+		player:GetAttributeChangedSignal("DailyClaimable"):Connect(refreshBadge)
+		refreshBadge()
+	end
 end
 
 return DailyUi

@@ -213,6 +213,24 @@ function BoostUi.Start()
 	layout.Padding = UDim.new(0, 18)
 	layout.Parent = stack
 
+	-- Fit the fixed-pixel stack to short screens. On a phone in landscape
+	-- (~375-430px tall) the full 454px stack clips both purchase buttons off the
+	-- top and bottom and overlaps the jump-button corner; scale it down to stay
+	-- within the viewport (keeping ~22% clear for that corner). Desktop is 1:1.
+	local STACK_HEIGHT = (IMAGE_SIZE + 84) * 2 + 22
+	local fitScale = Instance.new("UIScale")
+	fitScale.Parent = stack
+	local function fitToViewport()
+		local cam = workspace.CurrentCamera
+		local vh = if cam ~= nil then cam.ViewportSize.Y else 900
+		fitScale.Scale = math.clamp((vh * 0.78) / STACK_HEIGHT, 0.5, 1)
+	end
+	fitToViewport()
+	local camera = workspace.CurrentCamera
+	if camera ~= nil then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(fitToViewport)
+	end
+
 	buildButton(stack, {
 		name = "SleepAll",
 		title = ("Make Evil Squishies\nSleep for %ds"):format(tonumber(boosts.SleepSeconds) or 60),

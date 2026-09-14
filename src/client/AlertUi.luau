@@ -7,6 +7,7 @@
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local UiRefs = require(script.Parent.UiRefs)
@@ -17,7 +18,11 @@ local PULSE_MAX = 0.55 -- faintest point
 local PULSE_TIME = 0.45
 local COLOR_TIME = 0.2
 
-local WELCOME_TEXT = "Sneak into the field and hold E to grab a squishy"
+-- Touch players get a prompt button, not a key — telling them to "hold E"
+-- names a key their phone does not have, in the most important first moment.
+local WELCOME_TEXT = if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	then "Sneak into the field and hold the button on a squishy to grab it"
+	else "Sneak into the field and hold E to grab a squishy"
 local WELCOME_SECONDS = 8
 -- How long the carry line stays up. It used to sit on screen for the whole
 -- trip home, which turned a hint into furniture; now it flashes up when the

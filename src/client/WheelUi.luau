@@ -403,11 +403,22 @@ function WheelUi.Start()
 		return current + SPIN_TURNS * 360 + delta + jitter
 	end
 
-	local remotes = ReplicatedStorage:WaitForChild("Remotes")
-	local spinRemote = remotes:WaitForChild("Spin") :: any
+	-- Resolved off the main thread: an inline WaitForChild here would hang the
+	-- whole client boot sequence (every module after WheelUi in init.client)
+	-- forever if the Spin remote were ever missing, since a pcall cannot time
+	-- out a yield. doSpin refuses gracefully until it lands.
+	local spinRemote: any = nil
+	task.spawn(function()
+		local remotes = ReplicatedStorage:WaitForChild("Remotes")
+		spinRemote = remotes:WaitForChild("Spin")
+	end)
 
 	local function doSpin()
 		if spinning then
+			return
+		end
+		if spinRemote == nil then
+			UiRefs.notify("The wheel is still loading…", 3)
 			return
 		end
 		if readNumber("Spins") <= 0 then
