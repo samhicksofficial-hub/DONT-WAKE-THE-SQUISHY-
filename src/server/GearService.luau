@@ -243,10 +243,22 @@ local function ownsPass(player: Player, passId: number): boolean
 	if passId == 0 then
 		return false
 	end
-	local ok, owns = pcall(function()
-		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
-	end)
-	return ok and owns == true
+	-- Retry a failed lookup rather than treating an error as "not owned": one
+	-- MarketplaceService hiccup would otherwise deny a paid gear pass (the coil,
+	-- Glock, or the R$599 Knight) for the whole session, invisibly.
+	for attempt = 1, 3 do
+		local ok, owns = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
+		end)
+		if ok then
+			return owns == true
+		end
+		if attempt < 3 then
+			task.wait(attempt)
+		end
+	end
+	warn(("[GearService] gamepass %d ownership check failed for %s after retries"):format(passId, player.Name))
+	return false
 end
 
 -- One web call per parked-or-owned pass on join, then the attributes carry it.

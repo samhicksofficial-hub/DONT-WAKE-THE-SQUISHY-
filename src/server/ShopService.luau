@@ -153,10 +153,22 @@ local function ownsPass(player: Player, passId: number): boolean
 	if passId == 0 then
 		return false
 	end
-	local ok, owns = pcall(function()
-		return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
-	end)
-	return ok and owns == true
+	-- Retry a failed lookup rather than treating an error as "not owned": one
+	-- MarketplaceService hiccup would otherwise strip a paying VIP's multiplier
+	-- (or the R$599 Knight) for the whole session, invisibly.
+	for attempt = 1, 3 do
+		local ok, owns = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
+		end)
+		if ok then
+			return owns == true
+		end
+		if attempt < 3 then
+			task.wait(attempt)
+		end
+	end
+	warn(("[ShopService] gamepass %d ownership check failed for %s after retries"):format(passId, player.Name))
+	return false
 end
 
 local function applyPasses(player: Player)

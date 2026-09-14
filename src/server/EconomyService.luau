@@ -49,12 +49,18 @@ local function safeSetup(player: Player)
 	end
 end
 
+-- The safe ceiling for a balance: past 2^53 doubles lose integer precision, so
+-- money would stop incrementing correctly and JSON round-trips drift. Clamp
+-- here, the single writer, so no accrual or grant can breach it.
+local MAX_MONEY = 2 ^ 53
+
 -- Writes both sides of the data plane together.
 local function setMoney(player: Player, newValue: number)
 	local money = findMoneyValue(player)
 	if not money then
 		return
 	end
+	newValue = math.clamp(newValue, 0, MAX_MONEY)
 	money.Value = newValue
 	player:SetAttribute("Money", newValue)
 end

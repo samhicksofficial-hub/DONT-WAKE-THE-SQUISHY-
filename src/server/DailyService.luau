@@ -34,6 +34,10 @@ local storeWarned = false
 
 -- player -> { lastDay: number, streak: number }
 local state: { [Player]: { lastDay: number, streak: number } } = {}
+-- player -> true when their record was read trustworthily. A failed read must
+-- not be claimable (it would grant a duplicate) or savable (it would overwrite
+-- a real streak with the blank fallback).
+local readOk: { [Player]: boolean } = {}
 
 -- Whole UTC days since the epoch: the unit a "daily" reward is counted in.
 local function today(): number
@@ -44,12 +48,16 @@ local function keyFor(player: Player): string
 	return ("p_%d"):format(player.UserId)
 end
 
--- Reads a player's saved record, or a blank one when storage is unavailable.
-local function load(player: Player): { lastDay: number, streak: number }
+-- Reads a player's saved record. Returns the record AND whether the read is
+-- trustworthy: a genuine read failure (store present, GetAsync threw) returns
+-- false, so the caller can refuse to claim or overwrite a real streak with the
+-- blank fallback. A missing store (Studio without API) returns true because its
+-- save() is a no-op — there is nothing to clobber, so claims may proceed.
+local function load(player: Player): ({ lastDay: number, streak: number }, boolean)
 	local blank = { lastDay = 0, streak = 0 }
 	local dataStore = store
 	if dataStore == nil then
-		return blank
+		return blank, true
 	end
 	local ok, saved = pcall(function()
 		return dataStore:GetAsync(keyFor(player))
@@ -59,15 +67,15 @@ local function load(player: Player): { lastDay: number, streak: number }
 			storeWarned = true
 			warn("[DailyService] DataStore unavailable — streaks will not persist. In Studio, tick Game Settings > Security > Enable Studio Access to API Services.")
 		end
-		return blank
+		return blank, false
 	end
 	if typeof(saved) == "table" then
 		return {
 			lastDay = tonumber((saved :: any).lastDay) or 0,
 			streak = tonumber((saved :: any).streak) or 0,
-		}
+		}, true
 	end
-	return blank
+	return blank, true
 end
 
 local function save(player: Player, record: { lastDay: number, streak: number })
@@ -75,11 +83,17 @@ local function save(player: Player, record: { lastDay: number, streak: number })
 	if dataStore == nil then
 		return
 	end
-	local ok, err = pcall(function()
-		dataStore:SetAsync(keyFor(player), record)
-	end)
-	if not ok then
-		warn(("[DailyService] save failed for %s: %s"):format(player.Name, tostring(err)))
+	for attempt = 1, 3 do
+		local ok, err = pcall(function()
+			dataStore:SetAsync(keyFor(player), record)
+		end)
+		if ok then
+			return
+		end
+		warn(("[DailyService] save attempt %d failed for %s: %s"):format(attempt, player.Name, tostring(err)))
+		if attempt < 3 then
+			task.wait(attempt)
+		end
 	end
 end
 
@@ -99,7 +113,7 @@ local function publish(player: Player)
 	if record == nil then
 		return
 	end
-	local claimable = record.lastDay ~= today()
+	local claimable = readOk[player] == true and record.lastDay ~= today()
 	player:SetAttribute("DailyStreak", record.streak)
 	player:SetAttribute("DailyClaimable", claimable)
 	player:SetAttribute("DailyNextDay", pendingDay(record))
@@ -152,14 +166,16 @@ end
 
 function DailyService.CanClaim(player: Player): boolean
 	local record = state[player]
-	return record ~= nil and record.lastDay ~= today()
+	return record ~= nil and readOk[player] == true and record.lastDay ~= today()
 end
 
 -- Claims today's reward. Returns the ladder day claimed, or nil if there was
 -- nothing to claim.
 function DailyService.Claim(player: Player): number?
 	local record = state[player]
-	if record == nil or record.lastDay == today() then
+	-- Refuse when the read was untrustworthy: claiming would grant a duplicate
+	-- and then save the blank streak over their real one.
+	if record == nil or readOk[player] ~= true or record.lastDay == today() then
 		return nil
 	end
 	local day = pendingDay(record)
@@ -195,7 +211,9 @@ function DailyService.Start(services: any, _map: any)
 	end
 
 	local function setup(player: Player)
-		state[player] = load(player)
+		local record, ok = load(player)
+		state[player] = record
+		readOk[player] = ok
 		publish(player)
 	end
 	Players.PlayerAdded:Connect(function(player)
@@ -211,6 +229,7 @@ function DailyService.Start(services: any, _map: any)
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		state[player] = nil
+		readOk[player] = nil
 	end)
 
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
