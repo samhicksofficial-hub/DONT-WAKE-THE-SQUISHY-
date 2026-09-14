@@ -288,9 +288,9 @@ function ShopService.Start(services: any, _map: any)
 		return true
 	end)
 
-	-- The one and only assignment of the callback in this codebase (the
-	-- donation board model in the place also assigns it; whichever runs last
-	-- wins, exactly as before this service existed — see the file header).
+	-- The one and only assignment of the callback: the DonationLeaderboard free
+	-- model in the place used to assign it too and race this, but it no longer
+	-- touches ProcessReceipt (it is display-only and sandboxed — see DESIGN.md).
 	MarketplaceService.ProcessReceipt = onReceipt
 
 	wireStarterDisplay()
