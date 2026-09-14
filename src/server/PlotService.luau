@@ -1215,6 +1215,10 @@ local function onPlacePrompt(plot: PlotRecord, slot: SlotRecord, player: Player)
 	local ok, err = pcall(placeSquishy, plot, slot, def)
 	if not ok then
 		warn(("[PlotService] failed to place squishy for %s: %s"):format(player.Name, tostring(err)))
+		-- TakeCarriedDef already consumed the carry, so a failed placement would
+		-- destroy a squishy the player earned. Hand it back onto their head
+		-- instead — level and variant intact — so nothing is lost.
+		pcall(servicesRef.SquishyService.GiveCarried, player, def.name, def.variant, def.level)
 		return
 	end
 	-- A stolen squishy lands at the level it was taken at (TakeCarriedDef

@@ -712,6 +712,14 @@ function SquishyService.Start(services: any, map: any)
 		player:GetAttributeChangedSignal("LastSlappedAt"):Connect(function()
 			pcall(SquishyService.ForceDrop, player)
 		end)
+		-- A character removed WITHOUT Died firing (a teleport, a LoadCharacter)
+		-- would take the carried squishy — welded into the rig — down with it.
+		-- Drop it first while the character still exists, so the cargo survives.
+		player.CharacterRemoving:Connect(function()
+			if carrying[player] ~= nil then
+				pcall(SquishyService.ForceDrop, player)
+			end
+		end)
 		local existing = player.Character
 		if existing ~= nil then
 			task.spawn(onCharacterAdded, player, existing)

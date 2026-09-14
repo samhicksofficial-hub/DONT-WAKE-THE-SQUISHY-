@@ -474,6 +474,9 @@ function KnightService.Start(_services: any, _map: any)
 		wantsGuard[player] = nil
 		lastToggle[player] = nil
 		despawn(player)
+		-- despawn writes generation[player]; clear it too so a departed player
+		-- leaves no entry pinning their instance for the server's lifetime.
+		generation[player] = nil
 	end)
 end
 
