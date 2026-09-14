@@ -36,6 +36,17 @@ local PLOT_POLL = 0.25
 -- Retries for the initial read. A failed load is NOT an empty profile.
 local LOAD_ATTEMPTS = 3
 local LOAD_BACKOFF = 2
+-- After a failed load, keep trying quietly in the background so a transient
+-- DataStore blip at join does not doom the whole session to unsaved.
+local RELOAD_INTERVAL = 30
+-- Retries for a leaving/shutdown write. The load retries; the save must too, or
+-- one throttle at logout loses the session's tail.
+local SAVE_ATTEMPTS = 3
+local SAVE_BACKOFF = 1
+-- Processed developer-product receipts remembered per profile, newest kept, so
+-- a re-delivered receipt is recognised and never granted twice. Roblox only
+-- re-delivers recent unacknowledged receipts, so this stays small.
+local RECEIPT_MEMORY = 200
 
 local store: DataStore? = nil
 local servicesRef: any = nil
@@ -43,6 +54,17 @@ local servicesRef: any = nil
 -- player -> true once their profile has been read (or confirmed absent).
 -- No entry means "do not write": see the header.
 local loaded: { [Player]: boolean } = {}
+-- player -> true once the profile's scalars are applied (or the player is new).
+-- ShopService gates receipt grants on this so a purchase is never granted into
+-- a session that is about to have its Money/Spins overwritten by the load.
+local ready: { [Player]: boolean } = {}
+-- player -> true only once the plot has actually been restored (or there was
+-- nothing to restore). Until then `gather` must NOT trust the live plot: it is
+-- the empty one built before the profile landed, and saving it wipes the base.
+local plotRestored: { [Player]: boolean } = {}
+-- player -> ordered list of processed receipt PurchaseIds (persisted), so every
+-- product handler is idempotent across a crash-and-rejoin, not just the pack.
+local receiptLog: { [Player]: { string } } = {}
 -- player -> the profile as read, so a save can fall back to it for anything
 -- the session never managed to apply.
 local profiles: { [Player]: any } = {}
@@ -82,10 +104,12 @@ local function gather(player: Player): any
 
 	local previous = profiles[player] or {}
 	-- The plot falls back to the profile as loaded. A player who left before
-	-- their plot finished building must not have it saved as empty.
+	-- their plot finished building — OR whose profile has not restored into the
+	-- live plot yet — must not have it saved as the empty starter base. Only
+	-- once `plotRestored` is set is the live plot the truth worth writing.
 	local plot = previous.plot
 	local plotIsFresh = false
-	if plots ~= nil then
+	if plots ~= nil and plotRestored[player] == true then
 		local ok, exported = pcall(plots.ExportPlot, player)
 		if ok and exported ~= nil then
 			plot = exported
@@ -118,6 +142,8 @@ local function gather(player: Player): any
 		upgrades = upgradeLevels,
 		discovered = if discovery ~= nil then discovery.ExportKeys(player) else (previous.discovered or {}),
 		plot = plot,
+		-- Processed receipt ids, so a re-delivery after a crash is not re-granted.
+		receipts = receiptLog[player] or previous.receipts or {},
 		savedAt = os.time(),
 	}
 end
@@ -161,19 +187,23 @@ end
 
 -- The plot, once PlotService has finished building one to put things in.
 local function applyPlot(player: Player, profile: any)
+	-- Nothing to restore: the live plot the player builds this session IS the
+	-- truth, so let `gather` trust it immediately.
 	if typeof(profile.plot) ~= "table" then
+		plotRestored[player] = true
 		return
 	end
 	local plots = service("PlotService")
 	if plots == nil then
+		plotRestored[player] = true
 		return
 	end
 	local deadline = os.clock() + PLOT_WAIT_SECONDS
 	while plots.GetPlotOrigin(player) == nil do
 		if player.Parent == nil or os.clock() >= deadline then
-			-- Left, or the plot never appeared. Their profile is untouched on
-			-- disk and `plot` falls back to it on the next save, so nothing is
-			-- lost by giving up here.
+			-- Left, or the plot never appeared. plotRestored stays false so the
+			-- profile's stored plot is kept on the next save — nothing is lost
+			-- by giving up here.
 			return
 		end
 		task.wait(PLOT_POLL)
@@ -183,6 +213,9 @@ local function applyPlot(player: Player, profile: any)
 		warn(("[SaveService] plot restore failed for %s: %s"):format(player.Name, tostring(restoredOrErr)))
 		return
 	end
+	-- Restored (or the plot was empty either way): the live plot is now the
+	-- profile, safe to export and save from here on.
+	plotRestored[player] = true
 	if restoredOrErr == true then
 		print(("[%s] restored %s: %d squishies, %d/%d floors"):format(
 			Config.GameName,
@@ -250,28 +283,22 @@ local function computeOffline(player: Player, profile: any)
 	end
 end
 
-local function loadPlayer(player: Player)
-	local ok, profile = readProfile(player)
-	if not ok then
-		-- Explicitly NOT marking them loaded: this session will not write, so a
-		-- transient DataStore failure costs them one session's progress rather
-		-- than everything they have ever earned.
-		warn(("[SaveService] %s is playing unsaved this session (their profile is untouched)"):format(player.Name))
-		player:SetAttribute("OfflineChecked", true)
-		return
-	end
-	loaded[player] = true
-	if typeof(profile) ~= "table" then
-		player:SetAttribute("OfflineChecked", true)
-		return -- genuinely new player; nothing to apply
-	end
+-- Restores a successfully read profile into the live session and opens the
+-- gates (ready → receipts may grant; plotRestored → the plot may be saved).
+-- `allowOffline` is false on the background-recovery path, where the offline
+-- verdict has already been delivered for this session.
+local function applyLoadedProfile(player: Player, profile: any, allowOffline: boolean)
 	profiles[player] = profile
+	receiptLog[player] = if typeof(profile.receipts) == "table" then profile.receipts else {}
 	local applied, err = pcall(applyScalars, player, profile)
 	if not applied then
 		warn(("[SaveService] scalar restore failed for %s: %s"):format(player.Name, tostring(err)))
 	end
 	-- After the scalars: the multiplier preview reads the restored rebirths.
-	pcall(computeOffline, player, profile)
+	if allowOffline then
+		pcall(computeOffline, player, profile)
+	end
+	ready[player] = true
 	player:SetAttribute("OfflineChecked", true)
 	task.spawn(function()
 		local plotOk, plotErr = pcall(applyPlot, player, profile)
@@ -279,6 +306,55 @@ local function loadPlayer(player: Player)
 			warn(("[SaveService] plot restore errored for %s: %s"):format(player.Name, tostring(plotErr)))
 		end
 	end)
+end
+
+-- Everything a brand-new (or recovered-empty) player needs: nothing to restore,
+-- so every gate opens at once and the live session is the truth.
+local function markFresh(player: Player)
+	receiptLog[player] = {}
+	plotRestored[player] = true
+	ready[player] = true
+	player:SetAttribute("OfflineChecked", true)
+end
+
+local function loadPlayer(player: Player)
+	local ok, profile = readProfile(player)
+	if not ok then
+		-- Do NOT mark loaded: this session will not overwrite their real save.
+		-- But it is not terminal — keep retrying quietly so a transient blip is
+		-- recovered mid-session, and set SaveDisabled so the client can warn the
+		-- player their progress is at risk rather than losing it silently.
+		warn(("[SaveService] %s could not load — session not saving yet, retrying in the background"):format(player.Name))
+		player:SetAttribute("SaveDisabled", true)
+		player:SetAttribute("OfflineChecked", true)
+		task.spawn(function()
+			while player.Parent ~= nil and loaded[player] ~= true do
+				task.wait(RELOAD_INTERVAL)
+				if player.Parent == nil then
+					return
+				end
+				local rok, rprofile = readProfile(player)
+				if rok then
+					loaded[player] = true
+					player:SetAttribute("SaveDisabled", nil)
+					if typeof(rprofile) == "table" then
+						applyLoadedProfile(player, rprofile, false)
+					else
+						markFresh(player)
+					end
+					print(("[%s] recovered %s's profile on retry; saving re-enabled"):format(Config.GameName, player.Name))
+					return
+				end
+			end
+		end)
+		return
+	end
+	loaded[player] = true
+	if typeof(profile) ~= "table" then
+		markFresh(player) -- genuinely new player; nothing to apply
+		return
+	end
+	applyLoadedProfile(player, profile, true)
 end
 
 -- `reason` only colours the warning; every path is the same write.
@@ -296,23 +372,73 @@ local function savePlayer(player: Player, reason: string): boolean
 		return false
 	end
 	profiles[player] = snapshot
-	-- UpdateAsync, not SetAsync: two servers holding the same player (a rejoin
-	-- racing a leave) then queue rather than silently overwrite each other.
-	local written, err = pcall(function()
-		dataStore:UpdateAsync(keyFor(player), function(_old)
-			return snapshot
+	local myStamp = tonumber(snapshot.savedAt) or 0
+	-- UpdateAsync with a stale-write guard: queueing alone still lets an older
+	-- session clobber a newer one (a rejoin on a second server racing this
+	-- server's delayed leave-save). If the stored profile is NEWER than ours,
+	-- keep it. Retried a few times so one throttle at logout is not fatal.
+	for attempt = 1, SAVE_ATTEMPTS do
+		local written, err = pcall(function()
+			dataStore:UpdateAsync(keyFor(player), function(old)
+				if type(old) == "table" and (tonumber(old.savedAt) or 0) > myStamp then
+					return old
+				end
+				return snapshot
+			end)
 		end)
-	end)
-	if not written then
-		warn(("[SaveService] save failed for %s (%s): %s"):format(player.Name, reason, tostring(err)))
-		return false
+		if written then
+			return true
+		end
+		warn(("[SaveService] save attempt %d/%d failed for %s (%s): %s"):format(
+			attempt, SAVE_ATTEMPTS, player.Name, reason, tostring(err)))
+		if attempt < SAVE_ATTEMPTS then
+			task.wait(SAVE_BACKOFF * attempt)
+		end
 	end
-	return true
+	return false
 end
 
 -- Public: the dev panel and anything else that wants a save on demand.
 function SaveService.SaveNow(player: Player): boolean
 	return savePlayer(player, "manual")
+end
+
+-- True once the profile's scalars are applied (or the player is new). Until
+-- then a grant would be overwritten by the pending load, so ShopService holds
+-- receipts as NotProcessedYet — Roblox re-delivers them once this is true.
+function SaveService.IsReady(player: Player): boolean
+	return ready[player] == true
+end
+
+-- Whether this exact receipt was already granted (survives a crash-and-rejoin),
+-- so a re-delivery is acknowledged without granting the reward a second time.
+function SaveService.WasProcessed(player: Player, purchaseId: string): boolean
+	local log = receiptLog[player]
+	if log == nil then
+		return false
+	end
+	for _, id in log do
+		if id == purchaseId then
+			return true
+		end
+	end
+	return false
+end
+
+-- Records a granted receipt and persists it immediately, so a crash in the
+-- window before the next autosave cannot lose the paid grant OR let the
+-- re-delivery double-grant it.
+function SaveService.MarkProcessed(player: Player, purchaseId: string)
+	local log = receiptLog[player]
+	if log == nil then
+		log = {}
+		receiptLog[player] = log
+	end
+	table.insert(log, purchaseId)
+	while #log > RECEIPT_MEMORY do
+		table.remove(log, 1)
+	end
+	savePlayer(player, "receipt")
 end
 
 -- Deletes the stored profile outright — the dev panel's progress wipe. The
@@ -335,6 +461,10 @@ function SaveService.WipeProgress(player: Player): boolean
 	profiles[player] = nil
 	offlinePending[player] = nil
 	player:SetAttribute("OfflinePending", nil)
+	-- Wiped clean: the session keeps saving, writing the freshly reset state.
+	receiptLog[player] = {}
+	plotRestored[player] = true
+	ready[player] = true
 	loaded[player] = true
 	return true
 end
@@ -385,6 +515,9 @@ function SaveService.Start(services: any, _map: any)
 	Players.PlayerRemoving:Connect(function(player)
 		savePlayer(player, "leaving")
 		loaded[player] = nil
+		ready[player] = nil
+		plotRestored[player] = nil
+		receiptLog[player] = nil
 		profiles[player] = nil
 		offlinePending[player] = nil
 	end)

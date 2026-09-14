@@ -191,14 +191,41 @@ local function onReceipt(receipt: any): Enum.ProductPurchaseDecision
 		-- They left before the receipt landed; Roblox retries next join.
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+	local save = servicesRef ~= nil and servicesRef.SaveService or nil
+	local purchaseId = tostring(receipt.PurchaseId)
+
+	-- Already granted — even in a past session (the id is persisted in the
+	-- profile). Acknowledge the re-delivery without granting the reward twice.
+	if save ~= nil and save.WasProcessed(buyer, purchaseId) then
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+
+	-- Hold the receipt until the buyer's profile is loaded and applied. Grant
+	-- any sooner and the in-flight load overwrites it (Money/Spins), or the
+	-- session is unsaveable and the grant evaporates at logout. Roblox
+	-- re-delivers, so once the profile is ready this runs and succeeds.
+	if save ~= nil and not save.IsReady(buyer) then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
 	local ok, granted = pcall(handler, receipt, buyer)
 	if not ok then
 		warn(("[ShopService] receipt for product %d failed: %s"):format(receipt.ProductId, tostring(granted)))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	return if granted == true
-		then Enum.ProductPurchaseDecision.PurchaseGranted
-		else Enum.ProductPurchaseDecision.NotProcessedYet
+	if granted ~= true then
+		-- Handler declined (e.g. a repeat purchase of a one-time item): let
+		-- Roblox refund rather than charge for nothing.
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	-- Persist the grant AND the receipt id together (MarkProcessed saves now),
+	-- so a crash before the next autosave can neither lose the paid reward nor
+	-- let the re-delivery repeat it.
+	if save ~= nil then
+		save.MarkProcessed(buyer, purchaseId)
+	end
+	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
 function ShopService.Start(services: any, _map: any)
@@ -207,13 +234,14 @@ function ShopService.Start(services: any, _map: any)
 	local shop = Config.Shop :: any
 
 	ShopService.RegisterProductHandler(tonumber(products.StarterPack) or 0, function(_receipt, buyer)
-		-- Once per player, enforced HERE and not only in the UI: Roblox
-		-- re-delivers a receipt the server died before acknowledging, and an
-		-- unguarded grant would hand the whole bundle over again on rejoin.
-		-- An owner's receipt is acknowledged without regranting instead.
-		if buyer:GetAttribute("StarterPackOwned") ~= true then
-			grantStarterPack(buyer)
+		-- One-time: a re-delivery of the ORIGINAL purchase is caught upstream by
+		-- the persisted receipt id, so reaching here already-owned means a fresh
+		-- REPEAT purchase of an owned pack — decline it so Roblox refunds rather
+		-- than charging R$9 for nothing.
+		if buyer:GetAttribute("StarterPackOwned") == true then
+			return false
 		end
+		grantStarterPack(buyer)
 		return true
 	end)
 	ShopService.RegisterProductHandler(tonumber(products.Boost2x) or 0, function(_receipt, buyer)
