@@ -2105,6 +2105,17 @@ function PlotService.GetIncomeRate(player: Player): number
 	return total
 end
 
+-- Whether this player has an unlocked, empty, non-item slot to receive a
+-- squishy right now. StealService checks this before selling a steal, so a
+-- full-plot buyer is never charged for a transfer that cannot land.
+function PlotService.HasFreeSlot(player: Player): boolean
+	local plot = plots[player]
+	if plot == nil then
+		return false
+	end
+	return findFreeSlot(plot) ~= nil
+end
+
 -- Which of the map's plot spots this player holds, or nil before they claim
 -- one. DefenseService keys its per-plot collision groups off this.
 function PlotService.GetPlotSpotIndex(player: Player): number?

@@ -98,6 +98,12 @@ local function attachPrompt(model: Model)
 		if baseLocked(current.owner) then
 			return
 		end
+		-- Never open the purchase when the thief has nowhere to put it: a full
+		-- plot makes StealSquishy fail, and the charge would hang unfulfillable
+		-- until Roblox's slow auto-refund. Refuse before any Robux is asked.
+		if not servicesRef.PlotService.HasFreeSlot(thief) then
+			return
+		end
 		pending[thief.UserId] = { model = model, at = os.clock() }
 		local ok, err = pcall(function()
 			MarketplaceService:PromptProductPurchase(thief, productId)
@@ -146,20 +152,31 @@ function StealService.Start(services: any, map: any)
 	-- write-only, so two owners can never coexist).
 	servicesRef.ShopService.RegisterProductHandler(productId, function(receipt: any, buyer: Player)
 		local want = pending[receipt.PlayerId]
-		pending[receipt.PlayerId] = nil
+		-- Hard-invalid: nothing pending, timed out, or the target is gone. Clear
+		-- the record and refuse so Roblox refunds — a retry could never succeed.
 		if want == nil or os.clock() - want.at > PENDING_TIMEOUT or want.model.Parent == nil then
-			-- The target is gone. Granting anyway would take their Robux for
-			-- nothing, so refuse and let Roblox refund.
+			pending[receipt.PlayerId] = nil
 			return false
 		end
 		-- Re-derive the owner: the squishy may have moved plots while the
 		-- purchase dialog was open, and a lock bought in that window holds.
 		local info = servicesRef.PlotService.DescribePlaced(want.model)
-		if info == nil or baseLocked(info.owner) then
+		if info == nil or info.owner == buyer or baseLocked(info.owner) then
+			pending[receipt.PlayerId] = nil
+			return false
+		end
+		-- The plot filled between prompt and receipt: keep the pending record
+		-- (do NOT clear) and decline so Roblox re-delivers — it lands once a
+		-- slot frees, or times out to a refund after PENDING_TIMEOUT.
+		if not servicesRef.PlotService.HasFreeSlot(buyer) then
 			return false
 		end
 		local ok, moved = pcall(servicesRef.PlotService.StealSquishy, want.model, buyer)
-		return ok and moved == true
+		if ok and moved == true then
+			pending[receipt.PlayerId] = nil
+			return true
+		end
+		return false -- retryable; keep pending for the next re-delivery
 	end)
 end
 
