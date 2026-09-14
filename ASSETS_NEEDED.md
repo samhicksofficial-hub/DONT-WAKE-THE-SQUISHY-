@@ -58,21 +58,23 @@ server reads it too). The UI must display the base, so `Util.robuxPrice` prefers
 `UserBasePriceInRobux`; every price-display site uses it. Premium members still
 get their discount applied by Roblox at the purchase prompt.
 
-## 2b. Giant meshes — IMPORTED, one step left to make them permanent
+## 2b. Imported meshes — IN THE PLACE, one export left to make them permanent
 
-The three large enemies have their own models. You imported and named them, and
-they are now in `ReplicatedStorage.SquishyMeshes` and rendering correctly:
+Several meshes now live in `ReplicatedStorage.SquishyMeshes` and render
+correctly, but they were added to the LIVE place, not to the repo yet:
 
-| Source in the repo | Template name | Mesh / texture asset |
-|---|---|---|
-| `Assets/green-ghost/` | `GreenGhost` | `104001572591103` / `93678723116153` |
-| `Assets/spooky-dumpling/` | `SpookyDumpling` | `87444205075691` / `122549821882584` |
-| `Assets/pink-monster/` | `PinkMonster` | `137076139008417` / `71222483245165` |
+- The three giants: `GreenGhost`, `SpookyDumpling`, `PinkMonster`.
+- `ButterSquishy`, `PugSquishy`.
+- The five jelly cubes: `OrangeCubeSquishy`, `PinkCubeSquishy`, `BlueCubeSquishy`,
+  `GreenCubeSquishy`, `PurpleCubeSquishy` — all cloned from the one imported
+  `jelly_squish_cube` and tinted to each config colour (translucent Glass skin
+  over a brighter SmoothPlastic gel core). Added 2026-09-15.
 
 **They are not safe yet.** `ReplicatedStorage.SquishyMeshes` is Rojo-managed —
 `default.project.json` maps it to `Assets/SquishyMeshes.rbxm`, which still holds
-only the original 15. The next time Rojo syncs that file it replaces the whole
-folder and the three giants vanish, back to fallback primitives.
+only the original 15. The next time Rojo rebuilds that folder from the file (a
+reconnect after a Studio restart) it replaces the whole folder and every mesh
+above vanishes back to fallback primitives.
 
 To make them permanent, export the folder back into the repo:
 
@@ -81,14 +83,13 @@ To make them permanent, export the folder back into the repo:
 3. Overwrite `Assets/SquishyMeshes.rbxm` in this repo.
 4. Commit it.
 
-That has to be Studio's own export. A mesh is two uploaded asset ids, and the
+That has to be Studio's own export. A mesh is uploaded asset ids, and the
 obvious shortcut — rebuilding the `.rbxm` offline from those ids with Lune —
 does not work: Lune's `MeshPart` has no `MeshId` property, so it silently
-writes templates with no geometry at all. I tried it, checked the output, and
-threw it away; the file in the repo is untouched.
+writes templates with no geometry at all.
 
-Once the `.rbxm` has all 18, a clean clone builds the giants with no manual
-import, and re-importing is never needed again.
+Once the `.rbxm` holds all of them, a clean clone builds every squishy with no
+manual import, and re-importing is never needed again.
 
 ## 3. Images — DONE
 The Free Icon Pack 3.0.1 (Basic) you sent has been uploaded to your account and
