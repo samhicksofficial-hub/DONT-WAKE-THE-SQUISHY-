@@ -211,9 +211,9 @@ function DailyService.Start(services: any, _map: any)
 	end
 
 	local function setup(player: Player)
-		local record, ok = load(player)
+		local record, wasRead = load(player)
 		state[player] = record
-		readOk[player] = ok
+		readOk[player] = wasRead
 		publish(player)
 	end
 	Players.PlayerAdded:Connect(function(player)
