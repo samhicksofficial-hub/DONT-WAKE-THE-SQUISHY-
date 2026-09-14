@@ -328,8 +328,8 @@ five cash bundles, wheel spins, Steal, the defence pads, the server boosts) and
 game passes (Config.Passes: VIP, PermanentSpeed, the basement gear); what each
 grants is tuned in Config.Shop. ShopService owns the game's ONE
 MarketplaceService.ProcessReceipt and routes receipts by id - anything else
-selling a product registers a handler with it (StealService, DefenseService,
-and the place's DonationLeaderboard do). The starter pack's receipt handler is
+selling a product registers a handler with it (StealService, DefenseService).
+The starter pack's receipt handler is
 idempotent: Roblox re-delivers a receipt the server died before acknowledging,
 so an owner's receipt is acknowledged without granting the bundle again.
 Stealing is PAID: the prompt opens the Products.Steal purchase and the squishy
@@ -338,12 +338,14 @@ Lock refuses it at the prompt and again at the receipt.
 Grants land as player attributes: VipActive and BoostUntil (EconomyService
 multiplies income at its choke point), PermSpeedBonus (SquishyService adds it to
 walkspeed). While an id is 0 the card shows GREYED and un-buyable; no code
-guesses ids. NOTE (fixed 2026-09-11): the DonationLeaderboard free model in the
-place used to assign ProcessReceipt itself, racing ShopService's assignment —
-whichever ran last silently broke the other side's purchases. Its place-only
-Server script now registers its donation products into ShopService's router
-instead. Its DonationProducts list is still EMPTY, so the board takes no
-donations until product ids are added there.
+guesses ids. NOTE: the DonationLeaderboard free model in the place used to
+assign ProcessReceipt itself, racing ShopService's assignment. Its place-only
+Server script is SANDBOXED, so it cannot require ShopService to register into
+the router (that throws "cannot require ... calling thread is sandboxed"). It
+now touches ProcessReceipt not at all and is display-only; its DonationProducts
+list is EMPTY. If donation products are ever wanted, wire their ids into
+ShopService directly (e.g. a Config list ShopService reads) rather than from the
+sandboxed free-model script.
 
 ---
 
