@@ -43,7 +43,7 @@ re-pricing needs no code change.
 | `VIP` | 1.5x income forever | 1979522326 |
 | `PermanentSpeed` | +6 walkspeed forever | 1976582557 |
 | `SpeedCoil` | the coil, basement stand | 1975100605 |
-| `Glock` | the Block-19 pistol (rename the Roblox pass from "Block-17" to "Block-19" to match) | 1978712402 |
+| `Glock` | the Block-17 pistol (the Roblox pass is already named "Block-17" — matches) | 1978712402 |
 | `Knight` | bodyguard, basement stand | 1976768555 |
 
 `SlapHand` stays parked at `0` on purpose: everyone gets the slap hand free as
