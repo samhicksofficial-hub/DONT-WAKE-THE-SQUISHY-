@@ -2485,14 +2485,27 @@ function PlotService.ImportPlot(player: Player, data: any): (boolean, number)
 			continue
 		end
 		local def = Config.SquishyByName[entry.name]
-		local slot = byPlace[("%d:%d"):format(math.floor(tonumber(entry.floor) or 0), math.floor(tonumber(entry.position) or 0))]
-		-- A squishy retired from the catalog, or a slot that no longer exists
-		-- because the plot shrank, simply does not come back.
-		if def == nil or slot == nil or slot.isItemSlot or slot.occupied then
+		-- A squishy retired from the catalog simply does not come back.
+		if def == nil then
 			continue
 		end
-		if not slot.unlocked then
-			pcall(unlockSlot, plot, slot)
+		local slot = byPlace[("%d:%d"):format(math.floor(tonumber(entry.floor) or 0), math.floor(tonumber(entry.position) or 0))]
+		-- Prefer the exact saved slot. If it is gone (the plot shrank) or already
+		-- taken — a receipt can place the starter-pack squishy into a ground slot
+		-- during the load window, since receipts are gated on the profile being
+		-- applied but this import runs a beat later — fall back to any free
+		-- unlocked slot rather than dropping a saved squishy (level and all),
+		-- which the next save would then erase for good.
+		if slot ~= nil and not slot.isItemSlot and not slot.occupied then
+			if not slot.unlocked then
+				pcall(unlockSlot, plot, slot)
+			end
+		else
+			slot = findFreeSlot(plot) -- already unlocked, empty, non-item
+		end
+		if slot == nil then
+			warn(("[PlotService] no free slot to restore %s for %s"):format(tostring(entry.name), player.Name))
+			continue
 		end
 		local defCopy = table.clone(def)
 		defCopy.variant = entry.variant
