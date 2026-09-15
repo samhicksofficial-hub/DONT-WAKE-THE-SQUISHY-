@@ -312,11 +312,20 @@ Config.Upgrades = {
 -- ------------------------------------------------------- squishy levelling --
 -- A placed squishy earns more the more you feed it. Income at level L is
 -- `base * growth^(L-1)`, and the cost of the NEXT level is
--- `base * PriceFactor * growth^L` — so a rarer squishy both starts higher and
--- climbs faster, but costs proportionally more to push.
+-- `base * PriceFactor * growth^(L * CostSteepen)`.
+--
+-- CostSteepen is what stops one lucky Mythical from flattening the whole game.
+-- With it at 1, cost and income grow at the same rate and every level pays for
+-- itself in a flat ~PriceFactor*growth seconds forever (~63s for a Mythical),
+-- so a single high earner snowballs to trivial in under an hour. Above 1, cost
+-- outruns income and the payback LENGTHENS with level: early levels are
+-- untouched, but the endgame grind stays a grind. Payback at level L is
+-- `PriceFactor * growth^(L*(CostSteepen-1) + 1)` seconds. Tune this one number
+-- to make late progression faster (toward 1.0) or slower (higher).
 Config.Levels = {
 	MaxLevel = 50,
 	PriceFactor = 45,
+	CostSteepen = 1.15,
 	-- Per-rarity income growth per level. Better rarities scale harder.
 	Growth = {
 		Common = 1.14,
@@ -341,7 +350,10 @@ function Config.levelUpCost(baseIncome: number, rarityName: string, level: numbe
 		return nil
 	end
 	local growth = (Config.Levels.Growth :: any)[rarityName] or Config.Levels.DefaultGrowth
-	return math.max(1, math.floor(baseIncome * Config.Levels.PriceFactor * growth ^ level))
+	local steepen = tonumber(Config.Levels.CostSteepen) or 1
+	-- Cost climbs faster than income (growth^(L*steepen) vs income's growth^(L-1)),
+	-- so each level takes longer to pay for itself than the last.
+	return math.max(1, math.floor(baseIncome * Config.Levels.PriceFactor * growth ^ (level * steepen)))
 end
 
 -- ---------------------------------------------------------------- events --
